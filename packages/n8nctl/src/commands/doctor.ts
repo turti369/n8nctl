@@ -128,6 +128,59 @@ export function createDoctorCommand(): Command {
               detail: (err as Error).message,
             });
           }
+
+          // Write permission probe — create + delete a tag to distinguish
+          // read-only API keys from read-write ones. If POST fails, user will
+          // hit 403 mid-pipeline; detecting it here saves a broken deploy.
+          //
+          // n8n enforces a 24-character max on tag names (and misleadingly
+          // returns 409 "Tag already exists" on overrun). Keep the probe name
+          // well under the limit: "n8nctl-" (7) + 12 random chars = 19 chars.
+          const probeSuffix =
+            Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 8);
+          const probeName = `n8nctl-${probeSuffix}`;
+          let createdTagId: string | null = null;
+          try {
+            const created = await client.post<{ id: string; name: string }>('/tags', { name: probeName });
+            createdTagId = created.id;
+            results.push({
+              name: 'Write permission (POST /tags)',
+              status: 'ok',
+              detail: 'read-write API key',
+            });
+          } catch (err) {
+            const msg = (err as Error).message;
+            const looks403 = /403|forbidden/i.test(msg);
+            results.push({
+              name: 'Write permission',
+              status: looks403 ? 'fail' : 'warn',
+              detail: looks403
+                ? 'API key is READ-ONLY — destructive commands will fail mid-pipeline'
+                : msg,
+            });
+          }
+
+          // Clean up probe tag
+          if (createdTagId) {
+            try {
+              await client.delete(`/tags/${encodeURIComponent(createdTagId)}`);
+              results.push({
+                name: 'Delete permission (DELETE /tags/:id)',
+                status: 'ok',
+                detail: 'full read-write-delete',
+              });
+            } catch (err) {
+              const msg = (err as Error).message;
+              const looks403 = /403|forbidden/i.test(msg);
+              results.push({
+                name: 'Delete permission',
+                status: 'warn',
+                detail: looks403
+                  ? `API key can CREATE but not DELETE tags — probe tag "${probeName}" left on instance`
+                  : `probe cleanup failed: ${msg}; delete "${probeName}" manually`,
+              });
+            }
+          }
         } catch (err) {
           if (err instanceof AuthError) {
             results.push({

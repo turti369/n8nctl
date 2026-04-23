@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
+import { redactWorkflow } from '../../lib/redact.js';
 import type { Workflow, PaginatedResponse } from '../../types/n8n.js';
 
 interface ListOpts {
@@ -9,6 +10,7 @@ interface ListOpts {
   limit?: string;
   all?: boolean;
   search?: string;
+  redact?: boolean;
 }
 
 export function createListCommand(): Command {
@@ -20,6 +22,7 @@ export function createListCommand(): Command {
     .option('--search <text>', 'Case-insensitive substring match on workflow name')
     .option('--limit <n>', 'Maximum results (default 100). Ignored with --all.')
     .option('--all', 'Fetch ALL workflows across pages (auto-paginate)')
+    .option('--redact', 'Scrub pinData, credential names, and webhook IDs from each workflow')
     .action(
       withAction<ListOpts>(async (factory, opts) => {
         const client = await factory.client();
@@ -51,7 +54,9 @@ export function createListCommand(): Command {
           workflows = workflows.filter((w) => w.name.toLowerCase().includes(needle));
         }
 
-        await printData(workflows, { io: factory.io, opts: factory.flags }, (d) => {
+        const output = opts.redact ? workflows.map((w) => redactWorkflow(w)) : workflows;
+
+        await printData(output, { io: factory.io, opts: factory.flags }, (d) => {
           const rows = (d as Workflow[]).map((w) => [
             String(w.id),
             w.name,

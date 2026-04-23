@@ -61,6 +61,9 @@ export class N8nClient {
     while (attempt <= this.maxRetries) {
       try {
         const resp = await this.http.request<T>(config);
+        if (process.env.N8NCTL_TRACE === '1') {
+          process.stderr.write(`[trace] ${config.method?.toUpperCase()} ${config.url} → ${resp.status} (attempt ${attempt + 1})\n`);
+        }
         if (resp.status >= 200 && resp.status < 300) {
           return resp.data;
         }

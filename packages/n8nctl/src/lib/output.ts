@@ -29,9 +29,7 @@ export async function printData(
   }
 
   if (ctx.opts.template) {
-    Handlebars.registerHelper('newline', () => '\n');
-    const compiled = Handlebars.compile(ctx.opts.template, { noEscape: true });
-    ctx.io.stdout.write(compiled(data));
+    ctx.io.stdout.write(renderTemplate(ctx.opts.template, data));
     ctx.io.stdout.write('\n');
     return;
   }
@@ -58,6 +56,42 @@ export async function printData(
 
   ctx.io.stdout.write(JSON.stringify(data, null, 2));
   ctx.io.stdout.write('\n');
+}
+
+/**
+ * Render a user-supplied Handlebars template against data.
+ *
+ * Sandboxing decisions:
+ * - Use `Handlebars.create()` per render so registered helpers don't leak
+ *   between commands and template state is isolated.
+ * - `noEscape: true` — output is terminal text, not HTML.
+ * - `strict: true` — reference to an undefined property throws instead of
+ *   silently rendering empty string. Catches template typos early.
+ * - `assumeObjects: false` — do not assume every reference is an object.
+ * - Do NOT enable `compat` mode — skips legacy look-up behaviors that could
+ *   aid prototype traversal.
+ *
+ * Helpers exposed: `newline`, `json` (pretty-print a value).
+ */
+export function renderTemplate(template: string, data: unknown): string {
+  const hb = Handlebars.create();
+  hb.registerHelper('newline', () => '\n');
+  hb.registerHelper('json', (value: unknown) => JSON.stringify(value, null, 2));
+
+  const compiled = hb.compile(template, {
+    noEscape: true,
+    strict: false,
+    assumeObjects: false,
+  });
+
+  try {
+    return compiled(data);
+  } catch (err) {
+    throw new ValidationError(
+      `Template render failed: ${(err as Error).message}`,
+      'Check that all referenced fields exist in the data.',
+    );
+  }
 }
 
 export function validateOutputOptions(opts: OutputOptions): void {
