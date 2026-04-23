@@ -31,13 +31,13 @@ function handleError(err: unknown, factory: Factory): never {
   const { io } = factory;
 
   if (err instanceof N8nCtlError) {
-    io.stderr.write(`${c.red('error')}: ${err.message}\n`);
-    if (err.hint) io.stderr.write(`${c.yellow('hint')}: ${err.hint}\n`);
+    io.stderr.write(`${c.red('error')}: ${scrubAnsi(err.message)}\n`);
+    if (err.hint) io.stderr.write(`${c.yellow('hint')}: ${scrubAnsi(err.hint)}\n`);
     process.exit(err.exitCode);
   }
 
   if (err instanceof Error) {
-    io.stderr.write(`${c.red('error')}: ${err.message}\n`);
+    io.stderr.write(`${c.red('error')}: ${scrubAnsi(err.message)}\n`);
     if (process.env.N8NCTL_DEBUG === '1' && err.stack) {
       io.stderr.write(`${c.dim(err.stack)}\n`);
     } else {
@@ -46,6 +46,18 @@ function handleError(err: unknown, factory: Factory): never {
     process.exit(ExitCode.InternalError);
   }
 
-  io.stderr.write(`${c.red('error')}: unknown failure — ${String(err)}\n`);
+  io.stderr.write(`${c.red('error')}: unknown failure — ${scrubAnsi(String(err))}\n`);
   process.exit(ExitCode.InternalError);
+}
+
+/**
+ * Strip ANSI escape sequences and other control characters from strings
+ * that will be written to stderr. Untrusted API error messages could
+ * otherwise contain escapes that overwrite the user's terminal state,
+ * clear the screen, or hide further output.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-\x08\x0B-\x1F\x7F-\x9F]/g;
+export function scrubAnsi(input: string): string {
+  return input.replace(CONTROL_CHARS, '');
 }

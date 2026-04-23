@@ -9,6 +9,7 @@ import { createConfigCommand } from './commands/config/index.js';
 import { createProfileCommand } from './commands/profile/index.js';
 import { createTagNoun } from './commands/tag/index.js';
 import { createDoctorCommand } from './commands/doctor.js';
+import { createCompletionCommand } from './commands/completion.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -38,6 +39,7 @@ program.addCommand(createAuthCommand());
 program.addCommand(createConfigCommand());
 program.addCommand(createProfileCommand());
 program.addCommand(createDoctorCommand());
+program.addCommand(createCompletionCommand());
 
 program.parseAsync(process.argv).catch((err) => {
   process.stderr.write(`fatal: ${(err as Error).message}\n`);

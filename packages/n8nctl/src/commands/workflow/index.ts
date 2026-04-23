@@ -14,6 +14,7 @@ import { createRestoreCommand } from './restore.js';
 import { createTagCommand } from './tag.js';
 import { createExportAllCommand } from './export-all.js';
 import { createImportCommand } from './import.js';
+import { createWatchCommand } from './watch.js';
 
 export function createWorkflowCommand(): Command {
   const cmd = new Command('workflow').alias('wf').description('Manage n8n workflows');
@@ -32,5 +33,6 @@ export function createWorkflowCommand(): Command {
   cmd.addCommand(createTagCommand());
   cmd.addCommand(createExportAllCommand());
   cmd.addCommand(createImportCommand());
+  cmd.addCommand(createWatchCommand());
   return cmd;
 }
