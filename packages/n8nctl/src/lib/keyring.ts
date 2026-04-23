@@ -26,7 +26,10 @@ export async function setPassword(account: string, password: string): Promise<bo
   if (!keytar) return false;
   try {
     await keytar.setPassword(SERVICE_NAME, account, password);
-    return true;
+    // Verify-after-write: on Linux without libsecret, setPassword may succeed
+    // but the value is never persisted. Round-trip confirms real storage.
+    const roundTrip = await keytar.getPassword(SERVICE_NAME, account);
+    return roundTrip === password;
   } catch {
     return false;
   }

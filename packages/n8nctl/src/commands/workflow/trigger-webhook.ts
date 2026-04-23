@@ -40,11 +40,18 @@ export function createTriggerWebhookCommand(): Command {
 
         const wf = await client.get<Workflow>(`/workflows/${encodeURIComponent(id)}`);
 
-        const webhookNode = findWebhookNode(wf, opts.path);
+        const { node: webhookNode, total: webhookTotal } = findWebhookNode(wf, opts.path);
         if (!webhookNode) {
           throw new ValidationError(
             `Workflow "${wf.name}" has no webhook trigger node`,
             'Only webhook-triggered workflows can be invoked externally. For scheduled workflows, wait for the cron to fire; manual-trigger workflows can only be run from the n8n UI.',
+          );
+        }
+
+        if (!opts.path && webhookTotal > 1) {
+          factory.io.stderr.write(
+            `${c.yellow('warning')}: workflow has ${webhookTotal} webhook nodes; picked "${webhookNode.name}". ` +
+              `Use --path <path> to disambiguate.\n`,
           );
         }
 
@@ -130,19 +137,18 @@ export function createTriggerWebhookCommand(): Command {
     );
 }
 
-function findWebhookNode(wf: Workflow, pathFilter?: string) {
+function findWebhookNode(wf: Workflow, pathFilter?: string): { node: Workflow['nodes'][number] | null; total: number } {
   const webhookNodes = (wf.nodes ?? []).filter(
     (n) => n.type === 'n8n-nodes-base.webhook' && !n.disabled,
   );
-  if (webhookNodes.length === 0) return null;
+  if (webhookNodes.length === 0) return { node: null, total: 0 };
   if (pathFilter) {
-    return (
-      webhookNodes.find(
-        (n) => (n.parameters as { path?: string }).path === pathFilter,
-      ) ?? webhookNodes[0]
+    const match = webhookNodes.find(
+      (n) => (n.parameters as { path?: string }).path === pathFilter,
     );
+    return { node: match ?? webhookNodes[0], total: webhookNodes.length };
   }
-  return webhookNodes[0];
+  return { node: webhookNodes[0], total: webhookNodes.length };
 }
 
 function parseJsonOrThrow(raw: string, label: string): unknown {

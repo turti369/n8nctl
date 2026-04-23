@@ -56,6 +56,10 @@ export function validate(
 
   // Layer 5: Node sanity
   nodes.forEach((node, idx) => {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+      push('HIGH', 'E009', `nodes[${idx}] must be an object, got ${node === null ? 'null' : Array.isArray(node) ? 'array' : typeof node}`);
+      return;
+    }
     const tag = `nodes[${idx}]${node.name ? ` "${node.name}"` : ''}`;
     if (!node.id || typeof node.id !== 'string') push('HIGH', 'E010', `${tag} missing string "id"`);
     else if (nodeIds.has(node.id)) push('HIGH', 'E011', `${tag} duplicate id "${node.id}"`);
@@ -148,6 +152,7 @@ export function validate(
 
   const triggerLike = /trigger|webhook|schedule|cron|manual|start/i;
   nodes.forEach((node) => {
+    if (node === null || typeof node !== 'object') return;
     const name = node.name as string | undefined;
     if (!name) return;
     if (!referenced.has(name) && !triggerLike.test(node.type ?? '')) {
@@ -183,6 +188,7 @@ export function validate(
   // Layer 6: Node parameter type check
   if (catalog?.nodes) {
     nodes.forEach((node, idx) => {
+      if (node === null || typeof node !== 'object') return;
       const tag = `nodes[${idx}] "${node.name ?? '?'}" (${node.type ?? '?'})`;
       const schema: NodeSchema | undefined = catalog.nodes[node.type ?? ''];
       if (!schema) return;

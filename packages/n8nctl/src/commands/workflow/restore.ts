@@ -4,6 +4,7 @@ import path from 'node:path';
 import { withAction } from '../../lib/runtime.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
+import { stripReadOnlyFields } from '../../lib/workflow-body.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface RestoreOpts {
@@ -60,10 +61,4 @@ export function createRestoreCommand(): Command {
         }
       }),
     );
-}
-
-function stripReadOnlyFields(wf: Workflow): Partial<Workflow> {
-  const { id, createdAt, updatedAt, versionId, active, tags, ...rest } = wf;
-  void id; void createdAt; void updatedAt; void versionId; void active; void tags;
-  return rest;
 }

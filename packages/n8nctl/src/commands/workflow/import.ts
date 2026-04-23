@@ -4,6 +4,7 @@ import path from 'node:path';
 import { withAction } from '../../lib/runtime.js';
 import { ValidationError, ApiError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
+import { stripReadOnlyFields } from '../../lib/workflow-body.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface ImportOpts {
@@ -71,7 +72,7 @@ export function createImportCommand(): Command {
             const task = queue.shift();
             if (!task) return;
             try {
-              const body = stripReadOnly(task.workflow);
+              const body = stripReadOnlyFields(task.workflow);
               let result: Workflow;
               if (task.workflow.id) {
                 const exists = await client
@@ -124,10 +125,4 @@ export function createImportCommand(): Command {
         );
       }),
     );
-}
-
-function stripReadOnly(wf: Workflow): Partial<Workflow> {
-  const { createdAt, updatedAt, versionId, active, tags, ...rest } = wf;
-  void createdAt; void updatedAt; void versionId; void active; void tags;
-  return rest;
 }

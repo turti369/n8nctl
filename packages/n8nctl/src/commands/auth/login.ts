@@ -11,7 +11,11 @@ interface LoginOpts {
   host?: string;
   profile?: string;
   apiKey?: string;
-  noKeyring?: boolean;
+  /**
+   * Commander maps `--no-keyring` → `{ keyring: false }` (not `noKeyring`).
+   * Default when flag absent: `true`.
+   */
+  keyring?: boolean;
   insecure?: boolean;
 }
 
@@ -50,7 +54,8 @@ export function createLoginCommand(): Command {
           );
         }
 
-        const useKeyring = !opts.noKeyring && (await isKeyringAvailable());
+        const keyringEnabled = opts.keyring !== false; // defaults true; --no-keyring sets it false
+        const useKeyring = keyringEnabled && (await isKeyringAvailable());
 
         let stored: 'keyring' | 'file' = 'file';
         if (useKeyring) {
