@@ -1,0 +1,303 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "generated": "2026-04-21",
+    "description": "Offline catalog of top native n8n node types with required/optional parameter schemas. Used by validate.js Layer 6 + read by Claude via n8n-node-configuration skill.",
+    "type_values": ["string", "number", "boolean", "object", "array", "any"],
+    "notes": "typeVersion: list of versions this catalog is known-compatible with. If node uses a newer version, warning only. required: must be present AND correct type. optional: if present, must match type. conditionalRequired: required based on another field's value."
+  },
+  "nodes": {
+    "n8n-nodes-base.httpRequest": {
+      "typeVersion": [3, 4, 4.1, 4.2],
+      "required": {
+        "method": "string",
+        "url": "string"
+      },
+      "optional": {
+        "authentication": "string",
+        "sendHeaders": "boolean",
+        "headerParameters": "object",
+        "sendQuery": "boolean",
+        "queryParameters": "object",
+        "sendBody": "boolean",
+        "contentType": "string",
+        "bodyParameters": "object",
+        "jsonBody": "string",
+        "specifyBody": "string",
+        "options": "object"
+      },
+      "enums": {
+        "method": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        "authentication": ["none", "genericCredentialType", "predefinedCredentialType"],
+        "contentType": ["json", "form-urlencoded", "multipart-form-data", "raw", "binaryData"]
+      }
+    },
+    "n8n-nodes-base.code": {
+      "typeVersion": [1, 2],
+      "required": {
+        "jsCode": "string"
+      },
+      "optional": {
+        "mode": "string",
+        "language": "string",
+        "pythonCode": "string"
+      },
+      "enums": {
+        "mode": ["runOnceForAllItems", "runOnceForEachItem"],
+        "language": ["javaScript", "python"]
+      },
+      "conditionalRequired": {
+        "pythonCode": { "when": { "language": "python" }, "type": "string" }
+      }
+    },
+    "n8n-nodes-base.set": {
+      "typeVersion": [3, 3.1, 3.2, 3.3, 3.4],
+      "required": {
+        "assignments": "object"
+      },
+      "optional": {
+        "mode": "string",
+        "includeOtherFields": "boolean",
+        "options": "object"
+      },
+      "enums": {
+        "mode": ["manual", "raw"]
+      }
+    },
+    "n8n-nodes-base.if": {
+      "typeVersion": [2, 2.1, 2.2],
+      "required": {
+        "conditions": "object"
+      },
+      "optional": {
+        "combinator": "string",
+        "options": "object"
+      },
+      "enums": {
+        "combinator": ["and", "or"]
+      }
+    },
+    "n8n-nodes-base.switch": {
+      "typeVersion": [3, 3.1, 3.2],
+      "required": {
+        "rules": "object"
+      },
+      "optional": {
+        "mode": "string",
+        "options": "object"
+      },
+      "enums": {
+        "mode": ["rules", "expression"]
+      }
+    },
+    "n8n-nodes-base.merge": {
+      "typeVersion": [2, 2.1, 3, 3.1],
+      "required": {
+        "mode": "string"
+      },
+      "optional": {
+        "joinMode": "string",
+        "mergeByFields": "object",
+        "numberInputs": "number",
+        "options": "object"
+      },
+      "enums": {
+        "mode": ["append", "combine", "chooseBranch"],
+        "joinMode": ["keepMatches", "keepNonMatches", "keepEverything", "enrichInput1", "enrichInput2"]
+      }
+    },
+    "n8n-nodes-base.splitInBatches": {
+      "typeVersion": [1, 2, 3],
+      "required": {
+        "batchSize": "number"
+      },
+      "optional": {
+        "options": "object"
+      }
+    },
+    "n8n-nodes-base.webhook": {
+      "typeVersion": [1, 1.1, 2],
+      "required": {
+        "path": "string",
+        "httpMethod": "string"
+      },
+      "optional": {
+        "authentication": "string",
+        "responseMode": "string",
+        "responseData": "string",
+        "responseCode": "number",
+        "options": "object"
+      },
+      "enums": {
+        "httpMethod": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
+        "responseMode": ["onReceived", "lastNode", "responseNode"]
+      }
+    },
+    "n8n-nodes-base.scheduleTrigger": {
+      "typeVersion": [1, 1.1, 1.2],
+      "required": {
+        "rule": "object"
+      },
+      "optional": {}
+    },
+    "n8n-nodes-base.manualTrigger": {
+      "typeVersion": [1],
+      "required": {},
+      "optional": {}
+    },
+    "n8n-nodes-base.executeWorkflow": {
+      "typeVersion": [1, 1.1, 1.2],
+      "required": {
+        "workflowId": "any"
+      },
+      "optional": {
+        "mode": "string",
+        "source": "string",
+        "options": "object"
+      },
+      "enums": {
+        "mode": ["each", "once"],
+        "source": ["database", "localFile", "parameter", "url"]
+      }
+    },
+    "n8n-nodes-base.executeWorkflowTrigger": {
+      "typeVersion": [1, 1.1],
+      "required": {},
+      "optional": {
+        "workflowInputs": "object"
+      }
+    },
+    "n8n-nodes-base.respondToWebhook": {
+      "typeVersion": [1, 1.1],
+      "required": {
+        "respondWith": "string"
+      },
+      "optional": {
+        "responseBody": "string",
+        "responseCode": "number",
+        "options": "object"
+      },
+      "enums": {
+        "respondWith": ["text", "json", "firstIncomingItem", "allIncomingItems", "binary", "redirect", "noData"]
+      }
+    },
+    "n8n-nodes-base.wait": {
+      "typeVersion": [1, 1.1],
+      "required": {
+        "resume": "string"
+      },
+      "optional": {
+        "amount": "number",
+        "unit": "string",
+        "webhookSuffix": "string",
+        "options": "object"
+      },
+      "enums": {
+        "resume": ["timeInterval", "specificTime", "webhook"],
+        "unit": ["seconds", "minutes", "hours", "days"]
+      }
+    },
+    "n8n-nodes-base.filter": {
+      "typeVersion": [2, 2.1, 2.2],
+      "required": {
+        "conditions": "object"
+      },
+      "optional": {
+        "options": "object"
+      }
+    },
+    "n8n-nodes-base.aggregate": {
+      "typeVersion": [1],
+      "required": {
+        "aggregate": "string"
+      },
+      "optional": {
+        "fieldsToAggregate": "object",
+        "options": "object"
+      },
+      "enums": {
+        "aggregate": ["aggregateIndividualFields", "aggregateAllItemData"]
+      }
+    },
+    "n8n-nodes-base.googleSheets": {
+      "typeVersion": [4, 4.1, 4.2, 4.3, 4.4],
+      "required": {
+        "resource": "string",
+        "operation": "string"
+      },
+      "optional": {
+        "documentId": "object",
+        "sheetName": "object",
+        "dataMode": "string",
+        "valueInputMode": "string",
+        "columns": "object",
+        "options": "object"
+      },
+      "enums": {
+        "resource": ["sheet", "spreadsheet"],
+        "operation": ["append", "appendOrUpdate", "clear", "delete", "read", "update", "create", "deleteSpreadsheet"]
+      }
+    },
+    "n8n-nodes-base.gmail": {
+      "typeVersion": [2, 2.1],
+      "required": {
+        "resource": "string",
+        "operation": "string"
+      },
+      "optional": {
+        "sendTo": "string",
+        "subject": "string",
+        "emailType": "string",
+        "message": "string",
+        "options": "object"
+      },
+      "enums": {
+        "resource": ["message", "messageLabel", "label", "draft", "thread"],
+        "operation": ["send", "reply", "get", "getAll", "delete", "markAsRead", "markAsUnread", "addLabels", "removeLabels"]
+      }
+    },
+    "n8n-nodes-base.slack": {
+      "typeVersion": [2, 2.1, 2.2, 2.3],
+      "required": {
+        "resource": "string",
+        "operation": "string"
+      },
+      "optional": {
+        "select": "string",
+        "channelId": "object",
+        "user": "object",
+        "text": "string",
+        "messageType": "string",
+        "options": "object"
+      },
+      "enums": {
+        "resource": ["channel", "file", "message", "reaction", "star", "user", "userGroup", "userProfile"]
+      }
+    },
+    "@n8n/n8n-nodes-langchain.openAi": {
+      "typeVersion": [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6],
+      "required": {
+        "resource": "string",
+        "operation": "string"
+      },
+      "optional": {
+        "modelId": "object",
+        "messages": "object",
+        "prompt": "string",
+        "options": "object"
+      },
+      "enums": {
+        "resource": ["assistant", "text", "image", "audio", "file"]
+      }
+    },
+    "@n8n/n8n-nodes-langchain.lmChatAnthropic": {
+      "typeVersion": [1, 1.1, 1.2],
+      "required": {
+        "model": "object"
+      },
+      "optional": {
+        "options": "object"
+      }
+    }
+  }
+}
