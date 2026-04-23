@@ -1,0 +1,154 @@
+# @trngthnh369/n8nctl
+
+> 🇬🇧 **[Read in English](./README.md)**
+
+> kubectl cho n8n — CLI quản lý n8n workflows qua REST API. Lấy cảm hứng từ `gh`, `kubectl`, và `gws`.
+
+[![npm version](https://img.shields.io/npm/v/@trngthnh369/n8nctl.svg)](https://www.npmjs.com/package/@trngthnh369/n8nctl)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
+
+## Tính năng
+
+- Quản lý workflow đầy đủ (list, get, create, update, activate, backup, execute, delete)
+- Kiểm tra execution (list, get, retry, wait, last-error)
+- Auth phân lớp: `--api-key` → `$N8N_API_KEY` → OS keyring (keytar) → config file
+- **Multi-instance profiles** (dev/staging/prod) — switch bằng 1 lệnh
+- Output trio: `--json` / `--jq` / `--template` (giống `gh`)
+- TTY-aware: bảng đẹp khi ở terminal, JSON khi pipe
+- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal)
+- Retry + exponential backoff + tôn trọng `Retry-After` header
+- Validate workflow offline qua [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
+
+## Cài đặt
+
+```bash
+npm install -g @trngthnh369/n8nctl
+```
+
+Yêu cầu Node.js 20+.
+
+## Khởi động nhanh
+
+```bash
+# 1. Setup auth (lưu key vào OS keyring)
+n8nctl auth login
+
+# 2. List workflows
+n8nctl workflow list
+
+# 3. Backup workflow
+n8nctl workflow backup 42 -o ./backups/
+
+# 4. Deploy từ file (có validate offline)
+n8nctl workflow validate ./my-workflow.json
+n8nctl workflow create ./my-workflow.json
+n8nctl workflow activate 58
+
+# 5. Trigger execution (cho webhook workflows)
+n8nctl workflow trigger-webhook 58 --data '{"input": "value"}' --wait
+
+# 6. Xem execution gần nhất
+n8nctl execution list --workflow 58 --limit 1
+n8nctl execution get <execution-id> --logs
+```
+
+## Tham chiếu commands
+
+### workflow
+| Command | Mô tả |
+|---------|-------|
+| `workflow list [--active] [--tag <t>] [--search <s>] [--all]` | Liệt kê workflows |
+| `workflow get <id> [-o <file>]` | Lấy workflow JSON |
+| `workflow create <file>` | Tạo từ JSON file |
+| `workflow update <id> <file>` | Cập nhật từ JSON file |
+| `workflow activate <id>` | Kích hoạt workflow |
+| `workflow deactivate <id>` | Tắt workflow |
+| `workflow trigger-webhook <id> --wait` | Fire webhook + đợi kết quả |
+| `workflow backup <id> [-o <dir>]` | Backup ra file có timestamp |
+| `workflow delete <id> [--yes]` | Xoá workflow |
+| `workflow validate <file> [--strict]` | Validate offline 6 lớp |
+| `workflow diff <id> <file>` | So sánh local vs deployed |
+| `workflow restore <backup.json>` | Khôi phục từ backup |
+| `workflow tag <id> <names...>` | Gán tag |
+| `workflow export-all -o <dir>` | Backup toàn bộ workflows |
+| `workflow import <dir> [--force]` | Import hàng loạt từ thư mục |
+
+### execution
+| Command | Mô tả |
+|---------|-------|
+| `execution list [--workflow <id>]` | Liệt kê executions |
+| `execution get <id> [--logs]` | Chi tiết execution |
+| `execution retry <id>` | Retry execution lỗi |
+| `execution wait <id> --timeout` | Đợi execution kết thúc |
+| `execution last-error --workflow <id>` | Lấy lỗi gần nhất |
+
+### credential / tag / auth / config / profile / doctor
+```bash
+n8nctl credential list [--type <t>]     # derive từ workflow nodes
+n8nctl credential schema <type>         # schema của credential type
+n8nctl tag list
+n8nctl tag create <name>
+n8nctl auth {login|status|logout}
+n8nctl profile {list|add|switch|remove}
+n8nctl config {get|set|list}
+n8nctl doctor                           # health check toàn diện
+```
+
+## Auth resolution (thứ tự ưu tiên)
+
+1. `--api-key <token>` flag (tạm thời, dùng cho CI)
+2. `$N8N_API_KEY` + `$N8N_HOST` env vars (tương thích skill cũ)
+3. OS keyring qua `keytar` (default sau khi `auth login`)
+4. File `~/.config/n8nctl/config.yml` (hoặc `%APPDATA%\n8nctl\config.yml` trên Windows)
+
+## Multi-instance profiles
+
+```bash
+n8nctl profile add prod --host https://n8n-prod.example.com
+n8nctl profile add dev  --host https://n8n-dev.example.com
+n8nctl auth login --profile prod
+n8nctl auth login --profile dev
+n8nctl profile switch prod
+n8nctl workflow list                       # hit prod
+n8nctl --profile dev workflow list         # một lần override sang dev
+```
+
+## Output format linh hoạt
+
+```bash
+n8nctl workflow list                              # TTY: bảng đẹp
+n8nctl workflow list | cat                        # piped: JSON
+n8nctl workflow list --json                       # ép JSON
+n8nctl workflow list --jq '.[] | select(.active)' # jq query
+n8nctl workflow list --template '{{#each this}}{{id}}  {{name}}{{newline}}{{/each}}'
+```
+
+## Exit codes
+
+| Code | Ý nghĩa |
+|------|---------|
+| 0 | Thành công |
+| 1 | Lỗi API (4xx/5xx từ n8n) |
+| 2 | Lỗi auth |
+| 3 | Lỗi validation |
+| 4 | Lỗi network |
+| 5 | Lỗi nội bộ |
+
+## Self-signed TLS
+
+Cho dev instance dùng self-signed cert:
+
+```bash
+# Tạm thời cho 1 lệnh
+n8nctl --insecure workflow list
+
+# Vĩnh viễn per-profile
+n8nctl profile add dev --host https://dev.internal --insecure
+
+# Hoặc dùng env var Node native
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+```
+
+## License
+
+MIT

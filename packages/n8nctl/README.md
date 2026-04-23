@@ -1,5 +1,7 @@
 # @trngthnh369/n8nctl
 
+> 🇻🇳 **[Đọc bằng tiếng Việt](./README.vi.md)**
+
 > kubectl for n8n. A friendly CLI for managing n8n workflows via REST API — inspired by `gh`, `kubectl`, and `gws`.
 
 [![npm version](https://img.shields.io/npm/v/@trngthnh369/n8nctl.svg)](https://www.npmjs.com/package/@trngthnh369/n8nctl)

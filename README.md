@@ -1,5 +1,7 @@
 # n8nctl monorepo
 
+> 🇻🇳 **[Đọc bằng tiếng Việt](./README.vi.md)**
+
 Workspace containing two npm packages for operating n8n instances from the command line:
 
 | Package | Purpose | npm |
@@ -47,8 +49,7 @@ Full CLI inspired by `gh` and `kubectl`. Layered auth, multi-instance profiles,
 `--json` / `--jq` / `--template` output. See [package README](./packages/n8nctl/README.md).
 
 ### `@trngthnh369/n8n-workflow-validator`
-Standalone validator used by the CLI and the Pierre Cardin VN build-workflow pipeline.
-6 layers: structural, referential, expression, secrets, node sanity, parameter types.
+Standalone validator used by the CLI. 6 layers: structural, referential, expression, secrets, node sanity, parameter types.
 See [package README](./packages/n8n-workflow-validator/README.md).
 
 ## License
