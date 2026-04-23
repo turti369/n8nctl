@@ -1,0 +1,10 @@
+src/
+tests/
+.github/
+.vscode/
+.editorconfig
+.gitignore
+.releaserc.json
+tsconfig.json
+*.tsbuildinfo
+coverage/
