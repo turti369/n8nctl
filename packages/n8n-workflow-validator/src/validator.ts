@@ -260,6 +260,43 @@ export function validate(
           );
         }
       });
+
+      // conditionalRequired: field B is required only when field A matches
+      // a specific value. Example for the Code node:
+      //   conditionalRequired: {
+      //     pythonCode: { when: { language: "python" }, type: "string" }
+      //   }
+      Object.entries(schema.conditionalRequired ?? {}).forEach(([field, rule]) => {
+        const conditionMet = Object.entries(rule.when).every(([whenField, whenValue]) => {
+          const actualValue = params[whenField];
+          // Runtime expression: can't evaluate statically, so skip this rule
+          if (isExpression(actualValue)) return false;
+          return actualValue === whenValue;
+        });
+        if (!conditionMet) return;
+
+        const conditionDescr = Object.entries(rule.when)
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join(', ');
+
+        if (!(field in params)) {
+          push(
+            'HIGH',
+            'E065',
+            `${tag} missing conditionally required parameter "${field}" (required when ${conditionDescr})`,
+          );
+          return;
+        }
+        const value = params[field];
+        if (isExpression(value)) return;
+        if (!checkType(value, rule.type)) {
+          push(
+            'HIGH',
+            'E066',
+            `${tag} conditionally required "${field}" expected ${rule.type}, got ${actualType(value)} (when ${conditionDescr})`,
+          );
+        }
+      });
     });
   }
 

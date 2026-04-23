@@ -1,9 +1,8 @@
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
-import axios from 'axios';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
-import { ValidationError, ApiError, NetworkError } from '../../lib/errors.js';
+import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { waitForExecution } from '../../lib/execution.js';
 import type { Workflow } from '../../types/n8n.js';
@@ -16,6 +15,9 @@ interface TriggerOpts {
   path?: string;
   method?: string;
   test?: boolean;
+  authBearer?: string;
+  authBasic?: string;
+  authHeader?: string[];
 }
 
 export function createTriggerWebhookCommand(): Command {
@@ -30,9 +32,16 @@ export function createTriggerWebhookCommand(): Command {
     .option('--file <path>', 'Read payload from JSON file')
     .option('--method <verb>', 'HTTP method (default: from webhook node config)')
     .option('--path <path>', 'Override webhook path (useful when multiple webhook nodes exist)')
-    .option('--test', 'Use /webhook-test/ endpoint instead of /webhook/ (manual activation mode)')
+    .option('--test', 'Use /webhook-test/ endpoint (workflow in "listen for test event" mode)')
     .option('--wait', 'Wait for the newest execution to finish after triggering')
     .option('--timeout <ms>', 'Timeout for --wait polling in ms (default: 120000)')
+    .option('--auth-bearer <token>', 'Send Authorization: Bearer <token>')
+    .option('--auth-basic <user:pass>', 'Send HTTP Basic auth (user:password)')
+    .option(
+      '--auth-header <header>',
+      'Send custom auth header "Name: Value". Repeatable.',
+      (value: string, prev: string[] = []) => [...prev, value],
+    )
     .action(
       withAction<TriggerOpts>(async (factory, opts, args) => {
         const [id] = args;
@@ -58,6 +67,7 @@ export function createTriggerWebhookCommand(): Command {
         const params = webhookNode.parameters as {
           path?: string;
           httpMethod?: string;
+          authentication?: string;
         };
         const webhookPath = opts.path ?? params.path;
         const method = (opts.method ?? params.httpMethod ?? 'POST').toUpperCase();
@@ -65,9 +75,22 @@ export function createTriggerWebhookCommand(): Command {
           throw new ValidationError(`Webhook node "${webhookNode.name}" has no path configured`);
         }
 
-        const auth = await factory.auth();
+        // Warn when webhook requires auth but user did not pass --auth-*
+        const hasAuthFlags =
+          opts.authBearer || opts.authBasic || (opts.authHeader && opts.authHeader.length > 0);
+        if (
+          params.authentication &&
+          params.authentication !== 'none' &&
+          !hasAuthFlags
+        ) {
+          factory.io.stderr.write(
+            `${c.yellow('warning')}: webhook node requires "${params.authentication}" auth but no --auth-* flag was provided. ` +
+              `Request will likely be rejected.\n`,
+          );
+        }
+
         const prefix = opts.test ? 'webhook-test' : 'webhook';
-        const url = `${auth.host}/${prefix}/${encodeURIComponent(webhookPath)}`;
+        const url = `${client.host}/${prefix}/${encodePathSegments(webhookPath)}`;
 
         let body: unknown = {};
         if (opts.file) {
@@ -77,67 +100,65 @@ export function createTriggerWebhookCommand(): Command {
           body = parseJsonOrThrow(opts.data, '--data');
         }
 
+        const headers = buildAuthHeaders(opts);
+
         if (factory.flags.dryRun) {
           factory.io.stdout.write(
-            `${c.yellow('[dry-run]')} would ${method} ${url} with ${JSON.stringify(body).length} bytes\n`,
+            `${c.yellow('[dry-run]')} would ${method} ${url} ` +
+              `with ${JSON.stringify(body).length} bytes` +
+              (Object.keys(headers).length > 0 ? ` and auth headers` : '') +
+              `\n`,
           );
           return;
         }
 
         factory.io.stderr.write(`${c.dim('→')} ${method} ${url}\n`);
+        // Capture trigger timestamp with 30s buffer to absorb client-server
+        // clock skew (NTP drift, VM hibernation). Without this, we risk
+        // filtering out the very execution we just triggered.
         const triggerStart = new Date();
+        const clockSkewBufferMs = 30_000;
 
-        try {
-          const resp = await axios.request({
-            method,
-            url,
-            data: body,
-            validateStatus: () => true,
-            timeout: factory.flags.timeout ?? 30000,
-          });
-          if (resp.status >= 400) {
-            throw new ApiError(
-              `Webhook returned ${resp.status} ${resp.statusText}`,
-              resp.status,
-              resp.data,
-              resp.status === 404 && !opts.test
-                ? 'Try --test if the workflow is in "listen for test event" mode instead of active.'
-                : undefined,
+        const resp = await client.webhookRequest<unknown>(url, body, {
+          method,
+          headers,
+          timeout: factory.flags.timeout,
+        });
+        factory.io.stderr.write(`${c.green('✓')} webhook accepted\n`);
+
+        if (opts.wait) {
+          const timeout = opts.timeout ? Number(opts.timeout) : 120000;
+          const spinner = factory.io.spinner('Waiting for execution...').start();
+          try {
+            const execution = await waitForExecution(client, {
+              workflowId: id,
+              since: new Date(triggerStart.getTime() - clockSkewBufferMs),
+              timeoutMs: timeout,
+            });
+            spinner.succeed(
+              `Execution ${execution.id} ${execution.status === 'success' ? c.green('succeeded') : c.red(execution.status ?? 'finished')}`,
             );
-          }
-          factory.io.stderr.write(`${c.green('✓')} webhook accepted (HTTP ${resp.status})\n`);
-
-          if (opts.wait) {
-            const timeout = opts.timeout ? Number(opts.timeout) : 120000;
-            const spinner = factory.io.spinner('Waiting for execution...').start();
-            try {
-              const execution = await waitForExecution(client, {
-                workflowId: id,
-                since: triggerStart,
-                timeoutMs: timeout,
-              });
-              spinner.succeed(
-                `Execution ${execution.id} ${execution.status === 'success' ? c.green('succeeded') : c.red(execution.status ?? 'finished')}`,
-              );
-              await printData(execution, { io: factory.io, opts: factory.flags });
-            } catch (err) {
-              spinner.fail(`${c.red((err as Error).message)}`);
-              throw err;
+            await printData(execution, { io: factory.io, opts: factory.flags });
+            if (execution.status && execution.status !== 'success') {
+              process.exitCode = 1;
             }
-          } else if (!factory.flags.json && !factory.flags.jq && !factory.flags.template) {
-            factory.io.stdout.write(JSON.stringify(resp.data, null, 2) + '\n');
-          } else {
-            await printData(resp.data, { io: factory.io, opts: factory.flags });
+          } catch (err) {
+            spinner.fail(`${c.red((err as Error).message)}`);
+            throw err;
           }
-        } catch (err) {
-          if (err instanceof ApiError || err instanceof NetworkError) throw err;
-          throw new NetworkError(`Webhook request failed: ${(err as Error).message}`);
+        } else if (!factory.flags.json && !factory.flags.jq && !factory.flags.template) {
+          factory.io.stdout.write(JSON.stringify(resp, null, 2) + '\n');
+        } else {
+          await printData(resp, { io: factory.io, opts: factory.flags });
         }
       }),
     );
 }
 
-function findWebhookNode(wf: Workflow, pathFilter?: string): { node: Workflow['nodes'][number] | null; total: number } {
+function findWebhookNode(
+  wf: Workflow,
+  pathFilter?: string,
+): { node: Workflow['nodes'][number] | null; total: number } {
   const webhookNodes = (wf.nodes ?? []).filter(
     (n) => n.type === 'n8n-nodes-base.webhook' && !n.disabled,
   );
@@ -157,4 +178,45 @@ function parseJsonOrThrow(raw: string, label: string): unknown {
   } catch (err) {
     throw new ValidationError(`Invalid JSON in ${label}: ${(err as Error).message}`);
   }
+}
+
+/**
+ * Encode each path segment separately so "/" remains structural while
+ * unsafe characters inside a segment get escaped. `encodeURIComponent`
+ * on the whole path would turn "/" into %2F and break routing.
+ */
+export function encodePathSegments(path: string): string {
+  return path
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/');
+}
+
+function buildAuthHeaders(opts: TriggerOpts): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (opts.authBearer) {
+    headers['Authorization'] = `Bearer ${opts.authBearer}`;
+  }
+  if (opts.authBasic) {
+    const encoded = Buffer.from(opts.authBasic, 'utf8').toString('base64');
+    headers['Authorization'] = `Basic ${encoded}`;
+  }
+  if (opts.authHeader) {
+    for (const raw of opts.authHeader) {
+      const idx = raw.indexOf(':');
+      if (idx === -1) {
+        throw new ValidationError(
+          `Invalid --auth-header value "${raw}" — expected "Name: Value"`,
+        );
+      }
+      const name = raw.slice(0, idx).trim();
+      const value = raw.slice(idx + 1).trim();
+      if (!name) {
+        throw new ValidationError(`Empty header name in --auth-header "${raw}"`);
+      }
+      headers[name] = value;
+    }
+  }
+  return headers;
 }
