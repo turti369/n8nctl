@@ -21,6 +21,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: N8NCTL
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,12 +64,12 @@ jobs:
       - name: Publish @trngthnh369/n8n-workflow-validator
         run: npm publish -w @trngthnh369/n8n-workflow-validator --access public --provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.N8NCTL_TOKEN }}
 
       - name: Publish @trngthnh369/n8nctl
         run: npm publish -w @trngthnh369/n8nctl --access public --provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.N8NCTL_TOKEN }}
 
       - name: Extract release notes from CHANGELOG
         id: extract_notes

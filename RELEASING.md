@@ -4,8 +4,10 @@ How to cut a new release of `n8nctl` and `n8n-workflow-validator`.
 
 ## Prerequisites
 
-1. `NPM_TOKEN` secret is set on the GitHub repo
-   (`https://github.com/trngthnh369/n8nctl/settings/secrets/actions`).
+1. `N8NCTL_TOKEN` secret is set on the GitHub **`N8NCTL` environment**
+   (`https://github.com/trngthnh369/n8nctl/settings/environments`), not the
+   repo-level secrets. The release workflow binds to `environment: N8NCTL`
+   so the token is only accessible during release jobs.
    - Generate at https://www.npmjs.com/settings/trngthnh369/tokens
    - **Granular token**, scope: `@trngthnh369`, Read and write
    - **"Bypass 2FA when publishing"**: enabled
