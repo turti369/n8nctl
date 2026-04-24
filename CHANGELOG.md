@@ -5,10 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-04-24
+
+### Added
+
+- **`@trngthnh369/n8n-workflow-validator`**: node catalog bumped from
+  v1.0.0 to v1.1.0 with typeVersions observed on a live Pierre Cardin VN
+  n8n instance. Eliminates false-positive E060 warnings for workflows
+  using current n8n releases:
+  - `n8n-nodes-base.googleSheets`: added **4.5, 4.6, 4.7**
+  - `n8n-nodes-base.merge`: added **3.2**
+  - `n8n-nodes-base.scheduleTrigger`: added **1.3**
+  - `@n8n/n8n-nodes-langchain.openAi`: added **1.7, 1.8**
+
+### Changed
+
+- Node catalog `_meta.version` now tracks independently of package version
+  + includes a short `changelog` object explaining each catalog bump.
+
 ## [0.2.1] — 2026-04-24
 
-First release published via automated GitHub Actions workflow — no
-functional changes to either package.
+Tag exists for historical purposes but was never published to npm —
+GitHub Actions was disabled at the account level during this window, so
+the tag-triggered release pipeline did not fire. See v0.2.2 for the first
+release that actually ships.
+
+### Changed (would-have-been)
+
+- Release pipeline rewritten for monorepo tag-triggered publish with
+  provenance. Ready to ship as soon as Actions is re-enabled.
 
 ### Changed
 
