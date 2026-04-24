@@ -1,6 +1,6 @@
 {
   "name": "@trngthnh369/n8n-workflow-validator",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Offline validator for n8n workflow JSON — 6-layer checks (structural, referential, expressions, secrets, node sanity, parameter types).",
   "keywords": [
     "n8n",

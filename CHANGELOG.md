@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-04-24
+
+First release published via automated GitHub Actions workflow — no
+functional changes to either package.
+
+### Changed
+
+- **Release pipeline now automated.** Tag `v*.*.*` push on `main` triggers
+  the `release.yml` workflow, which runs tests, publishes both packages
+  with `--provenance`, and creates a GitHub Release from the matching
+  `CHANGELOG.md` section. No more manual `npm publish` or shared tokens.
+- **npm provenance attestation** is now emitted for every release.
+  Visible as a badge on the npm package page linking to the exact
+  GitHub commit that built the tarball.
+- Workflow binds to GitHub environment `N8NCTL` reading
+  `secrets.N8NCTL_TOKEN` (environment-scoped, narrower than repo-level).
+
+### Internal
+
+- Added `RELEASING.md` documenting the procedure and semver guidance.
+- Added `npm audit --omit=dev` check to CI (warn-only).
+
 ## [0.2.0] — 2026-04-23
 
 Security hardening + reliability + test coverage + DX improvements. Motivated
