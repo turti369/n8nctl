@@ -1,33 +1,98 @@
 name: Release
 
+# Tag-triggered publish. Workflow:
+#   1. Locally: bump version in both package.json files
+#   2. Commit: "chore(release): v0.X.Y"
+#   3. Tag:    git tag v0.X.Y && git push --tags
+#   4. This workflow publishes both packages + creates GitHub release
+#
+# Provenance requires the publish to run from GitHub Actions OIDC, so it
+# lives here rather than in publishConfig (local publishes can't sign).
+
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*.*.*'
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
+  contents: write  # for creating GitHub release
+  id-token: write  # for npm provenance via Sigstore
 
 jobs:
-  release:
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+  publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - run: npx semantic-release
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify tag matches package.json versions
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          VALIDATOR_VERSION=$(node -p "require('./packages/n8n-workflow-validator/package.json').version")
+          CLI_VERSION=$(node -p "require('./packages/n8nctl/package.json').version")
+          echo "Tag: $TAG_VERSION"
+          echo "Validator: $VALIDATOR_VERSION"
+          echo "CLI: $CLI_VERSION"
+          if [ "$TAG_VERSION" != "$VALIDATOR_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION != validator $VALIDATOR_VERSION"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$CLI_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION != CLI $CLI_VERSION"
+            exit 1
+          fi
+
+      - name: Publish @trngthnh369/n8n-workflow-validator
+        run: npm publish -w @trngthnh369/n8n-workflow-validator --access public --provenance
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @trngthnh369/n8nctl
+        run: npm publish -w @trngthnh369/n8nctl --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Extract release notes from CHANGELOG
+        id: extract_notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Grab the section for this version from CHANGELOG.md
+          awk -v v="$VERSION" '
+            /^## \[/ {
+              if (match($0, /\[([^\]]+)\]/, arr) && arr[1] == v) { flag = 1; next }
+              else if (flag) { exit }
+            }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::warning::No CHANGELOG entry found for $VERSION"
+            echo "Release $VERSION" > release-notes.md
+          fi
+          echo "notes-file=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.extract_notes.outputs.notes-file }}
+          draft: false
+          prerelease: false
