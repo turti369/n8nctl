@@ -52,6 +52,17 @@ Full CLI inspired by `gh` and `kubectl`. Layered auth, multi-instance profiles,
 Standalone validator used by the CLI. 6 layers: structural, referential, expression, secrets, node sanity, parameter types.
 See [package README](./packages/n8n-workflow-validator/README.md).
 
+## Claude Code skills (optional)
+
+If you use [Claude Code](https://claude.com/claude-code), the [`skills/`](./skills) directory contains 10 paired skills (n8nctl CLI reference, pipeline orchestrator, node configuration catalog, validation expert, integration recipes for Meta/Sheets/TikTok/Claude API, JS/Python code node helpers, workflow patterns). Install with one command:
+
+```bash
+./skills/install.sh            # Unix / macOS / Git Bash
+.\skills\install.ps1           # Windows PowerShell
+```
+
+Read [`skills/README.md`](./skills/README.md) for details. Skip this section if you only need the CLI.
+
 ## License
 
 MIT
