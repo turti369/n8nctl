@@ -1,15 +1,29 @@
 ---
 name: n8n-pipeline
-description: Top-level orchestrator skill for the full n8n workflow pipeline — build, deploy, test, fix, rollback. Trigger when the user asks to build/deploy/debug/fix/test/rollback an n8n workflow on the production host ($N8N_HOST), or refers to workflows under D:/Projects/work/build-workflow/. Routes the request to the correct slash command and enforces the safety gates (template-first, local validate, backup, confirm, test gate, git commit).
+description: Top-level orchestrator skill for the full n8n workflow pipeline — build, deploy, test, fix, rollback. Trigger when the user asks to build/deploy/debug/fix/test/rollback an n8n workflow on the production host ($N8N_HOST), or refers to workflows under their n8n workspace directory ($N8N_WORKSPACE). Routes the request to the correct slash command and enforces the safety gates (template-first, local validate, backup, confirm, test gate, git commit).
 ---
 
 # n8n Pipeline Orchestrator
 
 You are the entry point for n8n workflow automation. When triggered, you route the user's request to the right slash command and enforce safety rules across the whole pipeline.
 
+## Setup before first use
+
+Before this skill is useful, set the env var pointing at your n8n workspace:
+
+```bash
+# Unix / macOS / Git Bash
+export N8N_WORKSPACE="/path/to/your/n8n-workflow-projects"
+
+# Windows PowerShell
+$env:N8N_WORKSPACE = "D:\path\to\your\n8n-workflow-projects"
+```
+
+Reference workspace in this skill is `${N8N_WORKSPACE}` (placeholder). The author of this skill keeps theirs at `D:/Projects/work/build-workflow/` — adjust to your reality.
+
 ## When to trigger
 - User says "build/tạo workflow", "deploy wf", "test wf", "fix wf", "rollback wf"
-- User references a workflow file under `D:/Projects/work/build-workflow/`
+- User references a workflow file under `${N8N_WORKSPACE}/`
 - User asks to push a workflow to n8n production
 - User reports an n8n execution error and wants it fixed
 
@@ -59,7 +73,7 @@ Full command reference: run `n8nctl --help` or see `n8nctl (skill)` skill.
 - **n8n-integrations** — Meta/Sheets/TikTok/Claude API patterns
 - **n8n-code-javascript** / **n8n-code-python** — Code node content
 - **n8n-workflow-patterns** — proven architectural patterns
-- **wiki-query** — if the user maintains `n8n-wiki` at `D:/Projects/work/build-workflow/n8n-wiki/`
+- **wiki-query** — if the user maintains `n8n-wiki` at `${N8N_WORKSPACE}/n8n-wiki/`
 
 ## Supporting agents to delegate into
 
@@ -70,7 +84,7 @@ Full command reference: run `n8nctl --help` or see `n8nctl (skill)` skill.
 ## Directory layout
 
 ```
-D:/Projects/work/build-workflow/
+${N8N_WORKSPACE}/
 ├── _pipeline/
 │   ├── validate.js      # Local schema validator (Layer 1 gate)
 │   ├── test-gate.js     # Execution gate checker
