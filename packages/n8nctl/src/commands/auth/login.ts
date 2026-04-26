@@ -29,11 +29,16 @@ export function createLoginCommand(): Command {
     .option('--insecure', 'Store profile with TLS verification disabled (self-signed dev instances)')
     .action(
       withAction<LoginOpts>(async (factory, opts) => {
-        const profileName = opts.profile ?? 'default';
+        // The subcommand declares its own --host/--api-key/--profile in
+        // addition to the program-level globals (Commander does not merge
+        // values across the two scopes). Fall back to the global flags so
+        // env vars (N8N_HOST / N8N_API_KEY) and `n8nctl --host X auth login`
+        // both bypass the interactive prompts.
+        const profileName = opts.profile ?? factory.flags.profile ?? 'default';
 
         const answers = await promptMissing({
-          host: opts.host,
-          apiKey: opts.apiKey,
+          host: opts.host ?? factory.flags.host,
+          apiKey: opts.apiKey ?? factory.flags.apiKey,
         });
 
         const host = stripSlash(answers.host);
