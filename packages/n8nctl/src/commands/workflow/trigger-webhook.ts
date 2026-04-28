@@ -64,6 +64,20 @@ export function createTriggerWebhookCommand(): Command {
           );
         }
 
+        // Pre-flight: production webhooks (/webhook/) only register when the
+        // workflow is active. Test webhooks (/webhook-test/) only respond when
+        // the n8n editor is "Listening for test event". Trying to trigger an
+        // inactive workflow against /webhook/ returns 404 with a confusing
+        // message; bail early with an actionable hint.
+        if (!opts.test && !wf.active) {
+          throw new ValidationError(
+            `Workflow "${wf.name}" (${id}) is INACTIVE — production webhook is not registered`,
+            `Activate first:    n8nctl workflow activate ${id}\n` +
+              `       Or use --test:    n8nctl workflow trigger-webhook ${id} --test  (requires "Listen for test event" in n8n UI)\n` +
+              `       Or in one shot:   n8nctl workflow update ${id} <file> --activate  /  workflow create <file> --activate`,
+          );
+        }
+
         const params = webhookNode.parameters as {
           path?: string;
           httpMethod?: string;

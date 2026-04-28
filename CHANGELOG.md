@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] — 2026-04-26
+
+### Added
+
+- **`workflow create --activate` and `workflow update --activate`** — new
+  flag activates the workflow immediately after the create/update succeeds.
+  Useful for CI/CD pipelines that need the production webhook to register
+  in the same step. Without this flag a workflow ships as `active: false`
+  and any `trigger-webhook` against it returns 404 because the webhook URL
+  was never bound.
+
+### Changed
+
+- **`workflow trigger-webhook` now pre-checks `workflow.active`.** If a
+  user tries to trigger the production endpoint of an inactive workflow,
+  the CLI now bails with a `ValidationError` (exit 3) and a hint instead
+  of forwarding a confusing 404 from n8n. The hint shows three escape
+  hatches:
+    n8nctl workflow activate <id>
+    n8nctl workflow trigger-webhook <id> --test  (requires UI listener)
+    n8nctl workflow update <id> <file> --activate  (atomic deploy+activate)
+
+  Background: n8n only registers the `/webhook/<path>` URL when the
+  workflow is active. The new pre-check turns a silent failure mode that
+  surfaced in real CI runs into an actionable error.
+
 ## [0.2.3] — 2026-04-26
 
 ### Fixed

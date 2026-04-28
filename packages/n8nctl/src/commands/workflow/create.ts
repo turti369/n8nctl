@@ -7,12 +7,17 @@ import { readJsonSource } from '../../lib/stdin.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
 import type { Workflow } from '../../types/n8n.js';
 
+interface CreateOpts {
+  activate?: boolean;
+}
+
 export function createCreateCommand(): Command {
   return new Command('create')
     .description('Create a workflow from a JSON file (use "-" for stdin)')
     .argument('<file>', 'path to workflow JSON file, or "-" to read stdin')
+    .option('--activate', 'Activate the workflow immediately after create (registers webhooks)')
     .action(
-      withAction(async (factory, _opts, args) => {
+      withAction<CreateOpts>(async (factory, opts, args) => {
         const [file] = args;
         const { raw, source } = await readJsonSource(file);
 
@@ -28,8 +33,9 @@ export function createCreateCommand(): Command {
         if (factory.flags.dryRun) {
           const nodeCount = Array.isArray(body.nodes) ? body.nodes.length : 0;
           const name = body.name ?? '(unnamed)';
+          const suffix = opts.activate ? ' + activate' : '';
           factory.io.stdout.write(
-            `${c.yellow('[dry-run]')} would create workflow "${name}" (${nodeCount} nodes) from ${source}\n`,
+            `${c.yellow('[dry-run]')} would create workflow "${name}" (${nodeCount} nodes) from ${source}${suffix}\n`,
           );
           return;
         }
@@ -40,6 +46,12 @@ export function createCreateCommand(): Command {
         factory.io.stderr.write(
           `${c.green('✓')} created workflow ${c.bold(created.id)} "${created.name}"\n`,
         );
+
+        if (opts.activate && !created.active) {
+          await client.post<Workflow>(`/workflows/${encodeURIComponent(created.id)}/activate`);
+          factory.io.stderr.write(`${c.green('✓')} activated ${created.id}\n`);
+        }
+
         await printData(created, { io: factory.io, opts: factory.flags });
       }),
     );
