@@ -19,12 +19,14 @@ The CLI wraps the n8n REST API with retry, auth layering, --dry-run, --json/--jq
 ```bash
 n8nctl workflow list [--active] [--tag <t>] [--search <text>] [--all] [--redact]
 n8nctl workflow get <id> [-o <file>] [--redact]           # v0.2: --redact scrubs pinData/webhookId/credName
-n8nctl workflow create <file.json>                         # or "-" to read JSON from stdin (v0.2)
-n8nctl workflow update <id> <file.json>                    # or "-" for stdin (v0.2)
+n8nctl workflow status <id> [--exit]                       # v0.2.5: pretty state + webhooks + last exec; --exit maps active→0/1
+n8nctl workflow create <file.json> [--activate]            # v0.2.4: --activate registers webhook in same step. or "-" for stdin
+n8nctl workflow update <id> <file.json> [--activate]       # v0.2.4: --activate. or "-" for stdin
 n8nctl workflow activate <id>
 n8nctl workflow deactivate <id>
+n8nctl workflow refresh <id> [--delay <ms>]                # v0.2.5: deactivate→wait→activate to refresh n8n webhook router cache
 n8nctl workflow trigger-webhook <id> [--data <json>] [--wait --timeout <ms>] \
-  [--auth-bearer <token>] [--auth-basic <user:pass>] [--auth-header "Name: Value"]    # v0.2
+  [--auth-bearer <token>] [--auth-basic <user:pass>] [--auth-header "Name: Value"]    # v0.2; pre-checks active, --test for /webhook-test/
 n8nctl workflow backup <id> [-o <dir>]
 n8nctl workflow watch [--workflow <id>] [--status <s>] [--interval <ms>]   # v0.2: realtime tail
 n8nctl workflow delete <id> [--yes]
