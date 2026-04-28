@@ -8,6 +8,21 @@ export interface ClientOptions {
   maxRetries?: number;
   baseBackoffMs?: number;
   insecure?: boolean;
+  /**
+   * Called for every HTTP attempt (success, retry, final failure). Used to
+   * surface request lifecycle as structured events (NDJSON mode) without
+   * coupling the client to a specific logger.
+   */
+  onEvent?: (e: ClientEvent) => void;
+}
+
+export interface ClientEvent {
+  event:
+    | 'http-request'
+    | 'http-response'
+    | 'http-retry'
+    | 'http-error';
+  payload: Record<string, unknown>;
 }
 
 export interface PageIterator<T> {
@@ -20,13 +35,14 @@ export interface WebhookRequestOptions {
   timeout?: number;
 }
 
-const USER_AGENT = 'n8nctl/0.2.0';
+const USER_AGENT = 'n8nctl/0.3.0';
 
 export class N8nClient {
   private readonly http: AxiosInstance;
   private readonly webhookHttp: AxiosInstance;
   private readonly maxRetries: number;
   private readonly baseBackoffMs: number;
+  private readonly onEvent?: (e: ClientEvent) => void;
   readonly host: string;
 
   constructor(auth: ResolvedAuth, opts: ClientOptions = {}) {
@@ -65,6 +81,7 @@ export class N8nClient {
     });
     this.maxRetries = opts.maxRetries ?? 3;
     this.baseBackoffMs = opts.baseBackoffMs ?? 500;
+    this.onEvent = opts.onEvent;
   }
 
   async *paginate<T>(
@@ -114,20 +131,42 @@ export class N8nClient {
     let lastErr: Error | null = null;
 
     while (attempt <= this.maxRetries) {
+      const startedAt = Date.now();
+      this.onEvent?.({
+        event: 'http-request',
+        payload: { label, method: config.method?.toUpperCase(), url: config.url, attempt: attempt + 1 },
+      });
       try {
         const resp = await instance.request<T>(config);
+        const durationMs = Date.now() - startedAt;
         if (process.env.N8NCTL_TRACE === '1') {
           process.stderr.write(
             `[trace] ${label} ${config.method?.toUpperCase()} ${config.url} → ${resp.status} (attempt ${attempt + 1})\n`,
           );
         }
+        this.onEvent?.({
+          event: 'http-response',
+          payload: {
+            label,
+            method: config.method?.toUpperCase(),
+            url: config.url,
+            status: resp.status,
+            attempt: attempt + 1,
+            durationMs,
+          },
+        });
         if (resp.status >= 200 && resp.status < 300) {
           return resp.data;
         }
 
         if (isRetryable(resp.status) && attempt < this.maxRetries) {
           const retryAfter = parseRetryAfter(resp.headers['retry-after']);
-          await sleep(retryAfter ?? this.backoff(attempt));
+          const waitMs = retryAfter ?? this.backoff(attempt);
+          this.onEvent?.({
+            event: 'http-retry',
+            payload: { label, status: resp.status, attempt: attempt + 1, waitMs, level: 'warn' },
+          });
+          await sleep(waitMs);
           attempt++;
           continue;
         }
@@ -139,16 +178,30 @@ export class N8nClient {
           this.statusHint(resp.status),
         );
       } catch (err) {
-        if (err instanceof ApiError) throw err;
+        if (err instanceof ApiError) {
+          this.onEvent?.({
+            event: 'http-error',
+            payload: { label, status: err.status, message: err.message, level: 'error' },
+          });
+          throw err;
+        }
 
         if (err instanceof AxiosError) {
           const code = err.code ?? 'UNKNOWN';
           if (isNetworkRetryable(code) && attempt < this.maxRetries) {
+            this.onEvent?.({
+              event: 'http-retry',
+              payload: { label, code, attempt: attempt + 1, level: 'warn' },
+            });
             await sleep(this.backoff(attempt));
             attempt++;
             lastErr = err;
             continue;
           }
+          this.onEvent?.({
+            event: 'http-error',
+            payload: { label, code, message: err.message, level: 'error' },
+          });
           throw new NetworkError(`${label} request failed: ${err.message} (${code})`);
         }
 

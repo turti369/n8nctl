@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-04-28
+
+Tier S agent-observability features driven by an external comparative
+audit against `gh`, `stripe`, `aws`, `gws`. Goal: close the three gaps
+that genuinely matter when an LLM (Claude Code, agent harness) is the
+primary CLI consumer.
+
+### Added
+
+- **`--log-format <text|ndjson>` global flag** (also `N8NCTL_LOG_FORMAT`
+  env). NDJSON mode emits one JSON object per stderr event so an agent
+  can parse progress without regex. Events: `http-request`,
+  `http-response`, `http-retry`, `http-error`, `tls-verification-disabled`.
+  Each event has `ts`, `level`, plus per-event payload (label, method,
+  url, status, durationMs, attempt). Spinners are auto-disabled in
+  NDJSON mode to avoid polluting the event stream.
+
+- **`doctor --verbose`** appends a "Server stats" section: n8n version
+  (from `x-n8n-version` header if exposed), GET /workflows latency p50
+  with 5 raw samples, total/active workflow counts, last-50 execution
+  counts + failure rate, rate-limit headers. Lets agents make informed
+  decisions ("backoff because we're at 90% rate limit" vs "proceed").
+
+- **`workflow schema [--node <type>] [--list]`** — first-class schema
+  introspection. Without flags: returns the Workflow resource shape
+  (required/optional fields, read-only fields, an example workflow).
+  `--node http` (or any short alias / full type): returns required,
+  optional, enums, and conditionalRequired from the offline catalog.
+  `--list`: enumerates all 21 node types in the catalog with version.
+  Solves the agent-fabrication-of-field-names problem the CLI was
+  originally built to address.
+
+### Changed
+
+- N8nClient now accepts an `onEvent` callback (used internally by the
+  factory). HTTP requests/retries/errors fan out structured events
+  through this hook, which the IO layer renders as text or NDJSON
+  based on the active format. No public API change for command code.
+- `process.env.N8NCTL_TRACE=1` continues to work as a separate text-mode
+  trace channel; redundant when `--log-format=ndjson` is used.
+
 ## [0.2.5] — 2026-04-26
 
 ### Added

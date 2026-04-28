@@ -1,12 +1,13 @@
 import { resolveAuth, type AuthOverrides, type ResolvedAuth } from './lib/auth.js';
 import { N8nClient } from './lib/api.js';
-import { createIoStreams, type IoStreams } from './lib/io.js';
+import { createIoStreams, type IoStreams, type LogFormat } from './lib/io.js';
 import type { OutputOptions } from './lib/output.js';
 
 export interface GlobalFlags extends AuthOverrides, OutputOptions {
   timeout?: number;
   insecure?: boolean;
   dryRun?: boolean;
+  logFormat?: LogFormat;
 }
 
 export interface Factory {
@@ -17,7 +18,7 @@ export interface Factory {
 }
 
 export function createFactory(flags: GlobalFlags): Factory {
-  const io = createIoStreams();
+  const io = createIoStreams(flags.logFormat);
   let authCache: ResolvedAuth | null = null;
   let clientCache: N8nClient | null = null;
 
@@ -41,13 +42,16 @@ export function createFactory(flags: GlobalFlags): Factory {
         const a = await ensureAuth();
         const insecure = flags.insecure === true || a.insecure === true;
         if (insecure) {
-          io.stderr.write(
-            '\x1b[33mwarning\x1b[0m: TLS verification disabled\n',
+          io.event(
+            'tls-verification-disabled',
+            { level: 'warn', host: a.host },
+            '\x1b[33mwarning\x1b[0m: TLS verification disabled',
           );
         }
         clientCache = new N8nClient(a, {
           timeout: flags.timeout,
           insecure,
+          onEvent: (e) => io.event(e.event, e.payload),
         });
       }
       return clientCache;

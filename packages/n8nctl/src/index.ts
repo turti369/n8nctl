@@ -29,6 +29,11 @@ program
   .option('--timeout <ms>', 'HTTP request timeout in ms (default: 30000)', (v) => Number(v))
   .option('--insecure', 'Disable TLS certificate verification (self-signed dev instances only)')
   .option('--dry-run', 'Preview what would change without making destructive API calls')
+  .addOption(
+    new Option('--log-format <fmt>', 'stderr log format (text or ndjson). NDJSON emits one JSON object per event for agent consumption.')
+      .choices(['text', 'ndjson'])
+      .env('N8NCTL_LOG_FORMAT'),
+  )
   .showHelpAfterError();
 
 program.addCommand(createWorkflowCommand());

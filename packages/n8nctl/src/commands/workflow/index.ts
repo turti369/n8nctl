@@ -17,6 +17,7 @@ import { createImportCommand } from './import.js';
 import { createWatchCommand } from './watch.js';
 import { createStatusCommand } from './status.js';
 import { createRefreshCommand } from './refresh.js';
+import { createSchemaCommand } from './schema.js';
 
 export function createWorkflowCommand(): Command {
   const cmd = new Command('workflow').alias('wf').description('Manage n8n workflows');
@@ -32,6 +33,7 @@ export function createWorkflowCommand(): Command {
   cmd.addCommand(createBackupCommand());
   cmd.addCommand(createDeleteCommand());
   cmd.addCommand(createValidateCommand());
+  cmd.addCommand(createSchemaCommand());
   cmd.addCommand(createDiffCommand());
   cmd.addCommand(createRestoreCommand());
   cmd.addCommand(createTagCommand());
