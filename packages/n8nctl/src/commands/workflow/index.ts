@@ -15,15 +15,19 @@ import { createTagCommand } from './tag.js';
 import { createExportAllCommand } from './export-all.js';
 import { createImportCommand } from './import.js';
 import { createWatchCommand } from './watch.js';
+import { createStatusCommand } from './status.js';
+import { createRefreshCommand } from './refresh.js';
 
 export function createWorkflowCommand(): Command {
   const cmd = new Command('workflow').alias('wf').description('Manage n8n workflows');
   cmd.addCommand(createListCommand());
   cmd.addCommand(createGetCommand());
+  cmd.addCommand(createStatusCommand());
   cmd.addCommand(createCreateCommand());
   cmd.addCommand(createUpdateCommand());
   cmd.addCommand(createActivateCommand());
   cmd.addCommand(createDeactivateCommand());
+  cmd.addCommand(createRefreshCommand());
   cmd.addCommand(createTriggerWebhookCommand());
   cmd.addCommand(createBackupCommand());
   cmd.addCommand(createDeleteCommand());

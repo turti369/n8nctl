@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] — 2026-04-26
+
+### Added
+
+- **`workflow status <id>`** — first-class command for "is this workflow
+  active?" Pretty output by default (active badge, tags, webhook URLs,
+  last execution, exit code mapped to active state). `--json` / `--jq` /
+  `--template` work as on every other command. `--exit` forces exit code
+  semantics even in TTY (useful for `if n8nctl wf status 42; then ...`).
+  Replaces the previous workaround of `workflow get <id> --jq '.active'`.
+- **`workflow refresh <id>`** — workaround for the n8n bug where webhook
+  routes go stale after a workflow is updated via API while active.
+  Performs `deactivate → wait <ms> → activate`. Default delay 500ms.
+  Bails (exit 1) if workflow is inactive, with a hint to call `activate`
+  instead. Honors `--dry-run`.
+
+### Why these were needed
+
+A pipeline that did `workflow update --activate → trigger-webhook` saw
+n8n report `active: true` but the webhook URL still 404'd. The webhook
+router on the n8n side caches handlers tied to the workflow version at
+the moment of activation. Updating in place doesn't invalidate the
+cache. Cycling deactivate→activate forces re-registration.
+
+The other failure mode this addresses: external tooling (slash commands,
+other Claude sessions) reaching for the raw n8n API to check workflow
+state, because the existing `workflow get --jq '.active'` wasn't
+discoverable enough. `workflow status <id>` puts state checks on the
+expected first-class surface.
+
 ## [0.2.4] — 2026-04-26
 
 ### Added
