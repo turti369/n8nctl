@@ -1,7 +1,9 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, AxiosError } from 'axios';
+import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import https from 'node:https';
-import { ApiError, NetworkError } from './errors.js';
+import { runWithRetry, type ClientEvent } from './transport.js';
 import type { ResolvedAuth } from './auth.js';
+
+export type { ClientEvent } from './transport.js';
 
 export interface ClientOptions {
   timeout?: number;
@@ -16,15 +18,6 @@ export interface ClientOptions {
   onEvent?: (e: ClientEvent) => void;
 }
 
-export interface ClientEvent {
-  event:
-    | 'http-request'
-    | 'http-response'
-    | 'http-retry'
-    | 'http-error';
-  payload: Record<string, unknown>;
-}
-
 export interface PageIterator<T> {
   [Symbol.asyncIterator](): AsyncIterator<T>;
 }
@@ -35,7 +28,7 @@ export interface WebhookRequestOptions {
   timeout?: number;
 }
 
-const USER_AGENT = 'n8nctl/0.3.0';
+const USER_AGENT = 'n8nctl/0.5.0';
 
 export class N8nClient {
   private readonly http: AxiosInstance;
@@ -84,6 +77,10 @@ export class N8nClient {
     this.onEvent = opts.onEvent;
   }
 
+  private get retryConfig() {
+    return { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs, onEvent: this.onEvent };
+  }
+
   async *paginate<T>(
     url: string,
     params: Record<string, unknown> = {},
@@ -99,7 +96,7 @@ export class N8nClient {
   }
 
   async request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
-    return this.runWithRetry<T>(this.http, config, 'n8n API');
+    return runWithRetry<T>(this.http, config, 'n8n API', this.retryConfig);
   }
 
   /**
@@ -109,7 +106,7 @@ export class N8nClient {
    * auth) are supplied per call.
    */
   async webhookRequest<T = unknown>(url: string, data: unknown, opts: WebhookRequestOptions = {}): Promise<T> {
-    return this.runWithRetry<T>(
+    return runWithRetry<T>(
       this.webhookHttp,
       {
         method: opts.method ?? 'POST',
@@ -119,110 +116,8 @@ export class N8nClient {
         timeout: opts.timeout,
       },
       'webhook',
+      this.retryConfig,
     );
-  }
-
-  private async runWithRetry<T>(
-    instance: AxiosInstance,
-    config: AxiosRequestConfig,
-    label: string,
-  ): Promise<T> {
-    let attempt = 0;
-    let lastErr: Error | null = null;
-
-    while (attempt <= this.maxRetries) {
-      const startedAt = Date.now();
-      this.onEvent?.({
-        event: 'http-request',
-        payload: { label, method: config.method?.toUpperCase(), url: config.url, attempt: attempt + 1 },
-      });
-      try {
-        const resp = await instance.request<T>(config);
-        const durationMs = Date.now() - startedAt;
-        if (process.env.N8NCTL_TRACE === '1') {
-          process.stderr.write(
-            `[trace] ${label} ${config.method?.toUpperCase()} ${config.url} → ${resp.status} (attempt ${attempt + 1})\n`,
-          );
-        }
-        this.onEvent?.({
-          event: 'http-response',
-          payload: {
-            label,
-            method: config.method?.toUpperCase(),
-            url: config.url,
-            status: resp.status,
-            attempt: attempt + 1,
-            durationMs,
-          },
-        });
-        if (resp.status >= 200 && resp.status < 300) {
-          return resp.data;
-        }
-
-        if (isRetryable(resp.status) && attempt < this.maxRetries) {
-          const retryAfter = parseRetryAfter(resp.headers['retry-after']);
-          const waitMs = retryAfter ?? this.backoff(attempt);
-          this.onEvent?.({
-            event: 'http-retry',
-            payload: { label, status: resp.status, attempt: attempt + 1, waitMs, level: 'warn' },
-          });
-          await sleep(waitMs);
-          attempt++;
-          continue;
-        }
-
-        throw new ApiError(
-          `${label} returned ${resp.status} ${resp.statusText}`,
-          resp.status,
-          resp.data,
-          this.statusHint(resp.status),
-        );
-      } catch (err) {
-        if (err instanceof ApiError) {
-          this.onEvent?.({
-            event: 'http-error',
-            payload: { label, status: err.status, message: err.message, level: 'error' },
-          });
-          throw err;
-        }
-
-        if (err instanceof AxiosError) {
-          const code = err.code ?? 'UNKNOWN';
-          if (isNetworkRetryable(code) && attempt < this.maxRetries) {
-            this.onEvent?.({
-              event: 'http-retry',
-              payload: { label, code, attempt: attempt + 1, level: 'warn' },
-            });
-            await sleep(this.backoff(attempt));
-            attempt++;
-            lastErr = err;
-            continue;
-          }
-          this.onEvent?.({
-            event: 'http-error',
-            payload: { label, code, message: err.message, level: 'error' },
-          });
-          throw new NetworkError(`${label} request failed: ${err.message} (${code})`);
-        }
-
-        throw err;
-      }
-    }
-
-    throw new NetworkError(`Exceeded ${this.maxRetries} retries: ${lastErr?.message ?? 'unknown'}`);
-  }
-
-  private backoff(attempt: number): number {
-    return this.baseBackoffMs * Math.pow(2, attempt);
-  }
-
-  private statusHint(status: number): string | undefined {
-    if (status === 401) return 'Run `n8nctl auth status` and re-authenticate if needed.';
-    if (status === 403) return 'API key lacks required permissions.';
-    if (status === 404) return 'Resource not found — verify the ID.';
-    if (status === 429) return 'Rate limited by n8n. The CLI retried automatically.';
-    if (status >= 500) return 'n8n server error. Check n8n instance logs.';
-    return undefined;
   }
 
   get<T = unknown>(url: string, params?: Record<string, unknown>): Promise<T> {
@@ -240,26 +135,4 @@ export class N8nClient {
   delete<T = unknown>(url: string): Promise<T> {
     return this.request<T>({ method: 'DELETE', url });
   }
-}
-
-function isRetryable(status: number): boolean {
-  return status === 429 || status === 502 || status === 503 || status === 504;
-}
-
-function isNetworkRetryable(code: string): boolean {
-  return ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENETUNREACH', 'EAI_AGAIN'].includes(code);
-}
-
-function parseRetryAfter(header: string | number | string[] | undefined): number | null {
-  if (!header) return null;
-  const value = Array.isArray(header) ? header[0] : String(header);
-  const seconds = Number(value);
-  if (!Number.isNaN(seconds)) return seconds * 1000;
-  const date = Date.parse(value);
-  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
-  return null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

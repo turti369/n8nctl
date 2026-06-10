@@ -81,6 +81,8 @@ See [the umbrella README](../../README.md) for the full monorepo context.
 | Command | Description |
 |---------|-------------|
 | `credential list` | List credentials (no values) |
+| `credential schema <type>` | Fetch the schema (required fields) for a credential type |
+| `credential create <file> [--no-validate]` | Create a credential from a JSON file (`{name, type, data}`); validates against `/credentials/schema/<type>` unless `--no-validate` |
 
 ### auth
 | Command | Description |

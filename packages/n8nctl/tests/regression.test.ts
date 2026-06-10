@@ -69,3 +69,100 @@ describe('v0.1.1 regression: stripReadOnlyFields', () => {
     expect(frozen).toHaveProperty('id'); // original untouched
   });
 });
+
+describe('v0.4.0 regression: stripReadOnlyFields whitelist (n8n PUT 400 fix)', () => {
+  it('drops pinData (client-side test cache that n8n rejects)', () => {
+    const out = stripReadOnlyFields({
+      name: 'x',
+      nodes: [],
+      connections: {},
+      pinData: { 'Webhook Node': [{ json: { foo: 'bar' } }] },
+    });
+    expect(out).not.toHaveProperty('pinData');
+  });
+
+  it('drops staticData (server-side runtime state)', () => {
+    const out = stripReadOnlyFields({
+      name: 'x',
+      nodes: [],
+      connections: {},
+      staticData: { lastRun: '2026-05-08' },
+    });
+    expect(out).not.toHaveProperty('staticData');
+  });
+
+  it('drops meta (server-side template metadata)', () => {
+    const out = stripReadOnlyFields({
+      name: 'x',
+      nodes: [],
+      connections: {},
+      meta: { templateCredsSetupCompleted: true },
+    });
+    expect(out).not.toHaveProperty('meta');
+  });
+
+  it('drops unknown future fields (whitelist is forward-safe)', () => {
+    const out = stripReadOnlyFields({
+      name: 'x',
+      nodes: [],
+      connections: {},
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      futureField: { wat: 1 },
+    } as any);
+    expect(out).not.toHaveProperty('futureField');
+  });
+
+  it('full backup payload reduces to exactly 4 allowed keys', () => {
+    const fullBackup = {
+      id: '42',
+      name: 'Backup',
+      active: true,
+      nodes: [{ id: 'n1', name: 'Start', type: 't', typeVersion: 1, position: [0, 0] as [number, number], parameters: {} }],
+      connections: { Start: { main: [] } },
+      settings: { executionOrder: 'v1' },
+      staticData: { runs: 7 },
+      tags: [{ id: 't', name: 'prod' }],
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-05-08T00:00:00Z',
+      versionId: 'v3',
+      meta: { x: 1 },
+      pinData: { N: [] },
+    };
+    const out = stripReadOnlyFields(fullBackup);
+    expect(Object.keys(out).sort()).toEqual(['connections', 'name', 'nodes', 'settings']);
+  });
+
+  it('preserves settings when present', () => {
+    const out = stripReadOnlyFields({
+      name: 'x',
+      nodes: [],
+      connections: {},
+      settings: { saveDataErrorExecution: 'all', timezone: 'Asia/Ho_Chi_Minh' },
+    });
+    expect(out.settings).toEqual({ saveDataErrorExecution: 'all', timezone: 'Asia/Ho_Chi_Minh' });
+  });
+
+  it('omits settings when input has no settings (does not inject default)', () => {
+    const out = stripReadOnlyFields({ name: 'x', nodes: [], connections: {} });
+    expect(out).not.toHaveProperty('settings');
+  });
+
+  it('drops triggerCount + shared (fields n8n attaches to GET /workflows responses)', () => {
+    // Reported bug: `workflow create` from a file fetched via GET (or exported
+    // by the UI) carries triggerCount + shared, which n8n POST/PUT reject with
+    // 400. The blacklist version missed these; the whitelist drops them.
+    const out = stripReadOnlyFields({
+      name: 'x',
+      nodes: [],
+      connections: {},
+      triggerCount: 3,
+      shared: [{ role: 'workflow:owner', userId: 'u1' }],
+      tags: [{ id: 't', name: 'prod' }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    expect(out).not.toHaveProperty('triggerCount');
+    expect(out).not.toHaveProperty('shared');
+    expect(out).not.toHaveProperty('tags');
+    expect(Object.keys(out).sort()).toEqual(['connections', 'name', 'nodes']);
+  });
+});

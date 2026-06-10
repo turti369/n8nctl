@@ -1,12 +1,34 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { c } from '../../lib/io.js';
-import { ApiError } from '../../lib/errors.js';
+import { ApiError, ValidationError } from '../../lib/errors.js';
 import type { WorkflowTag } from '../../types/n8n.js';
 
 interface TagOpts {
   replace?: boolean;
   create?: boolean;
+}
+
+/**
+ * Commander v12 passes a variadic positional (`<tag-names...>`) to the action
+ * as a single nested array. Without flattening, `args.slice(1)` becomes
+ * `[ [name1, name2, ...] ]` and the inner loop sees the array itself as
+ * `name`, triggering "name.toLowerCase is not a function".
+ *
+ * Flatten + coerce to strings so the parser is robust against both nested
+ * (variadic) and flat (manual) shapes.
+ */
+export function parseTagArgs(args: unknown[]): { id: string; tagNames: string[] } {
+  if (args.length < 2 || typeof args[0] !== 'string' || !args[0]) {
+    throw new ValidationError('Missing workflow id');
+  }
+  const id = args[0];
+  const flat = (args.slice(1) as unknown[]).flat(Infinity);
+  const tagNames = flat.filter((s): s is string => typeof s === 'string' && s.length > 0);
+  if (tagNames.length === 0) {
+    throw new ValidationError('At least one tag name is required');
+  }
+  return { id, tagNames };
 }
 
 export function createTagCommand(): Command {
@@ -18,12 +40,15 @@ export function createTagCommand(): Command {
     .option('--create', 'Create tags that do not yet exist')
     .action(
       withAction<TagOpts>(async (factory, opts, args) => {
-        const id = args[0];
-        const tagNames = args.slice(1);
+        const { id, tagNames } = parseTagArgs(args);
         const client = await factory.client();
 
         const allTags = await client.get<{ data: WorkflowTag[] }>('/tags', { limit: 250 });
-        const byName = new Map(allTags.data.map((t) => [t.name.toLowerCase(), t]));
+        const byName = new Map(
+          (allTags.data ?? [])
+            .filter((t): t is WorkflowTag => typeof t?.name === 'string')
+            .map((t) => [t.name.toLowerCase(), t]),
+        );
 
         const resolved: WorkflowTag[] = [];
         for (const name of tagNames) {

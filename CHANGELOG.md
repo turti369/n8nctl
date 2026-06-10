@@ -5,6 +5,187 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-09
+
+Adds **session mode** — authenticate against n8n's internal `/rest` API with a
+login cookie to **execute workflows headless**, which the Public API cannot do
+(it has no execute endpoint). This is how an autonomous pipeline verifies a
+manual / scheduled / sub-workflow, or fires a workflow when the webhook router
+is stuck (n8n Issue #21614, queue mode). Ported from a verified reference
+(`n8n_session.py` + the autonomous-trigger playbook); contract pinned in
+`scripts/SESSION_REST_CONTRACT.md`. Live-verified end-to-end on n8n 1.122.5.
+
+### Added
+
+- **`workflow run <id> [--trigger <name>] [--wait] [--timeout <ms>]`** —
+  execute a workflow via `POST /rest/workflows/{id}/run` (the UI "Execute
+  Workflow" endpoint, session-cookie auth). Auto-picks a non-webhook trigger
+  when a workflow has several (`--trigger` to disambiguate; webhook triggers
+  return `waitingForWebhook` and are reported with a fix hint). `--wait` polls
+  `GET /rest/executions/{id}` to a terminal state and exits 1 on non-success
+  (pipeline gate signal). Respects `--dry-run` / `--json` / NDJSON.
+
+- **`auth login --session [--email <addr>] [--cookie-only]`** — configure
+  email/password session auth. Verifies via login + whoami; caches the cookie
+  in the OS keyring; stores the password in keyring (or `--cookie-only` to
+  store nothing and re-auth on expiry). Merges into an existing profile so an
+  API key on the same profile is preserved (`authMethods` tracks both).
+
+- **`N8nSessionClient`** (`src/lib/session-api.ts`) — cookie-auth `/rest`
+  client sharing the retry/backoff transport. Single-flight 401 re-login
+  (concurrent 401s await one login; `login()` itself is exempt to avoid
+  recursion on bad creds). Body schema follows the verified `ManualRunPayload`
+  contract — never sends `runData: {}` (which would select the Partial variant
+  → HTTP 500).
+
+- `resolveSession()` (separate from `resolveAuth` — the API-key path is
+  unchanged, `apiKey` stays required) reading env (`N8N_EMAIL` + `N8N_PASSWORD`
+  + `N8N_HOST`) → profile `session` block (password/cookie from keyring).
+
+### Changed
+
+- **Transport extracted** to `src/lib/transport.ts` (`runWithRetry`) so the
+  Public-API and session clients share one retry/backoff/NDJSON-event engine.
+  `N8nClient` is now a thin wrapper. Pure refactor — all prior tests stay green.
+
+### Workflow quality (normalize + new validator rules)
+
+Fixes three recurring defects in agent-generated workflow JSON:
+
+- **`workflow normalize <file> [-o <out>|-w]`** + **auto-normalize in
+  `create`/`update`** (`--no-normalize` to opt out). Behaviour-preserving:
+  - **Node ids** → UUID for any non-UUID/missing id. **Deterministic** (derived
+    from the node name) so repeated updates don't churn ids or diffs. Safe
+    because n8n keys connections / pinData / `$node[...]` on the node NAME.
+  - **Settings** → injects execution-log defaults (`saveDataErrorExecution`,
+    `saveDataSuccessExecution`, `saveManualExecutions`, `executionOrder`) when
+    absent, so failures are actually logged for debugging. Never overwrites an
+    explicit value.
+  - Does NOT touch `typeVersion` (bumping is risky — params differ across
+    versions).
+- **Validator (`@trngthnh369/n8n-workflow-validator` 0.4.0) — 3 new rules:**
+  - **E072** (MEDIUM) — `typeVersion` is older than the catalog's latest.
+  - **E070** (MEDIUM) — workflow `settings` missing execution-log keys.
+  - **E071** (LOW) — node id is not UUID format. (Adds `LOW` severity, which
+    never blocks — even under `--strict`.)
+
+### Fixed (auth UX)
+
+- **`auth login --session` is now non-interactive when env is set** — reads
+  `N8N_EMAIL` / `N8N_PASSWORD` / `N8N_HOST` and only prompts for what's missing
+  (was: always prompted for the password, so it couldn't be scripted).
+- **`auth login --session` attaches to the ACTIVE profile** (merging with an
+  existing API-key profile) instead of a hard-coded `"default"` — so
+  `workflow run` resolves the session from the profile you actually use.
+- **`auth logout --profile <name>` now honors the global `--profile` flag**
+  (previously the subcommand ignored it and fell back to the active profile,
+  which could remove the wrong profile).
+
+### Security
+
+- `auth logout` and `profile remove` now **purge ALL keyring material** for the
+  profile (API key + session password + cookie) via `purgeProfileSecrets()` —
+  previously they deleted only the API-key account, orphaning session secrets.
+- Recommend a dedicated automation user (member role) for session creds; the
+  stored password is a full login (broader blast radius than a scoped API key)
+  so document rotation and prefer `--cookie-only` on shared machines.
+
+## [0.4.0] — 2026-05-08
+
+Closes the long-standing `credential` gap: agents and CI scripts can now
+provision n8n credentials without touching the n8n web UI. Also fixes a
+silent 400 on `workflow update` when backups contain pinData / staticData.
+
+### Added
+
+- **`credential create <file>`** — POST a credential to n8n from a JSON
+  file (or stdin via `-`). The file must contain
+  `{name, type, data: {...}}`. Pre-flight validation fetches
+  `/credentials/schema/<type>` and asserts every required field is
+  present in `data` before the POST. If the schema endpoint is
+  unavailable (older n8n, transient failure) a warning is emitted and
+  the create proceeds — POST will still surface n8n's own validation
+  error.
+
+- **`--no-validate`** flag on `credential create` to skip the schema
+  pre-flight when the user knows better (forward-compat with n8n versions
+  whose schema endpoint diverges from the actual POST shape).
+
+### Fixed
+
+- **`workflow update` / `create` / `restore` / `import` no longer send
+  extra fields that n8n PUT rejects with HTTP 400.** Pre-0.4.0 the
+  internal `stripReadOnlyFields` helper was a blacklist of 6 fields
+  (id, createdAt, updatedAt, versionId, active, tags), which silently
+  let `pinData`, `staticData`, and `meta` slip through. n8n's Public
+  API enforces a strict 4-field whitelist (`name`, `nodes`,
+  `connections`, `settings`) and 400s on anything else — most visible
+  when restoring a backup taken right after a manual test run (pinData
+  populated by the web UI). The helper is now whitelist-based and
+  forward-safe against future n8n-added fields. Regression tests pin
+  pinData/staticData/meta/unknown-field drops.
+
+- **`workflow tag` no longer throws `name.toLowerCase is not a function`.**
+  Commander v12 passes a variadic positional (`<tag-names...>`) to the
+  action handler as a single nested array, so `args.slice(1)` produced
+  `[[name1, name2, ...]]` instead of `[name1, name2, ...]`. The inner
+  loop then tried `[...].toLowerCase()`. Introduced `parseTagArgs()` that
+  flattens any nesting depth, drops non-string entries, and validates
+  that id + at least one tag name were supplied. Also hardened the
+  `/tags` response handler against null `data` / non-string `name`
+  fields. 9 regression tests in `tests/workflow-tag.test.ts`.
+
+- **`doctor` no longer accumulates a garbage tag on every run.** The
+  write-permission probe used to POST a fresh random-named tag
+  (`n8nctl-<random>`) each run and DELETE it afterward — but on API keys
+  that have CREATE without DELETE scope, every `doctor` invocation left
+  one more orphan tag on the instance. The probe now reuses a single
+  fixed-name tag (`n8nctl-doctor-probe`): if a probe tag already exists
+  the create is skipped (write scope is already proven), so the tag count
+  can never grow. Cleanup is best-effort across ALL probe tags found, so
+  a key WITH delete scope also sweeps up legacy random-suffix orphans
+  from older versions in a single run. Probe detection is strict
+  (`n8nctl-doctor-probe` or `n8nctl-` + exactly 12 base36 chars) so
+  user-owned tags like `n8nctl-prod` are never touched. Extracted to a
+  pure `probeWritePermission()` with 13 tests in `tests/doctor-probe.test.ts`.
+
+### Changed
+
+- **Fixed misleading `✗` icon on success.** `workflow delete` and
+  `profile remove` printed a red `✗` (the failure glyph) on a successful
+  operation, making a clean delete look like an error. Both now print a green
+  `✓`, consistent with create/restore/tag. (Genuine-failure `✗` in
+  refresh/import/export-all/last-error/doctor are unchanged — those are real
+  errors.)
+
+- **`workflow refresh` no longer over-promises.** Its description and success
+  message claimed it "re-registered webhook handlers", but on queue-mode /
+  separate-webhook-process n8n the deactivate→activate cycle (and API activate
+  in general) only sets `active=true` in the DB without refreshing the running
+  process's webhook/cron router — so webhooks 404 and cron never fires. The
+  command now reports `cycled → active` plus a note that a UI "Save" (or n8n
+  restart) is required if a trigger still doesn't fire. The whitelist `create`
+  also added explicit regression coverage for `triggerCount` + `shared` (the
+  fields a GET-fetched workflow carries that triggered the reported 400).
+
+### Security
+
+- The `credential-created` NDJSON event emits only `{id, type, name}` —
+  never `data`. A regression test asserts no client lifecycle event ever
+  serializes the request body, so secrets cannot leak via stderr capture.
+
+- Output of `credential create` is restricted to a safe view
+  (`{id, name, type, createdAt, updatedAt}`); even if a future n8n
+  version echoes the data field on POST response, it is dropped before
+  reaching stdout.
+
+### Not in scope
+
+- `credential delete` and `credential update` deliberately deferred. The
+  destruction blast radius (a deleted credential breaks every workflow
+  using it) outweighs the convenience gain — the n8n web UI remains the
+  authoritative path for those.
+
 ## [0.3.0] — 2026-04-28
 
 Tier S agent-observability features driven by an external comparative

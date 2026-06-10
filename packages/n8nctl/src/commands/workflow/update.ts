@@ -5,10 +5,13 @@ import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { readJsonSource } from '../../lib/stdin.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
+import { normalizeWorkflow } from '../../lib/normalize.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface UpdateOpts {
   activate?: boolean;
+  /** Commander maps `--no-normalize` → { normalize: false }. Default true. */
+  normalize?: boolean;
 }
 
 export function createUpdateCommand(): Command {
@@ -17,6 +20,7 @@ export function createUpdateCommand(): Command {
     .argument('<id>', 'workflow ID')
     .argument('<file>', 'path to workflow JSON file, or "-" to read stdin')
     .option('--activate', 'Activate the workflow after update (registers webhooks)')
+    .option('--no-normalize', 'Skip auto-normalize (UUID node ids + execution-log settings)')
     .action(
       withAction<UpdateOpts>(async (factory, opts, args) => {
         const [id, file] = args;
@@ -27,6 +31,16 @@ export function createUpdateCommand(): Command {
           parsed = JSON.parse(raw) as Partial<Workflow>;
         } catch (err) {
           throw new ValidationError(`Invalid JSON in ${source}: ${(err as Error).message}`);
+        }
+
+        // Auto-normalize unless --no-normalize. Deterministic UUIDs (from node
+        // name) keep ids stable across repeated updates — no churn.
+        if (opts.normalize !== false) {
+          const { workflow, changes } = normalizeWorkflow(parsed as Workflow);
+          parsed = workflow;
+          for (const ch of changes) {
+            factory.io.event('workflow-normalized', { change: ch }, `${c.dim('→ normalized:')} ${ch}`);
+          }
         }
 
         const body = stripReadOnlyFields(parsed);

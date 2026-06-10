@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { readConfig, updateConfig } from '../../lib/config.js';
-import { deletePassword, keyringAccountFor } from '../../lib/keyring.js';
+import { purgeProfileSecrets } from '../../lib/keyring.js';
 import { c } from '../../lib/io.js';
 
 interface LogoutOpts {
@@ -15,16 +15,17 @@ export function createLogoutCommand(): Command {
     .action(
       withAction<LogoutOpts>(async (factory, opts) => {
         const config = await readConfig();
-        const name = opts.profile ?? config.activeProfile ?? 'default';
+        // Honor both the subcommand --profile and the global --profile flag.
+        const name = opts.profile ?? factory.flags.profile ?? config.activeProfile ?? 'default';
         const profile = config.profiles[name];
         if (!profile) {
           factory.io.stderr.write(`${c.yellow('!')} profile "${name}" not found\n`);
           return;
         }
 
-        if (profile.keyStoredInKeyring) {
-          await deletePassword(keyringAccountFor(name));
-        }
+        // Purge ALL secrets (api-key + session password + cookie) so a session
+        // profile never leaves reusable login creds behind.
+        await purgeProfileSecrets(name);
 
         await updateConfig((cfg) => {
           delete cfg.profiles[name];

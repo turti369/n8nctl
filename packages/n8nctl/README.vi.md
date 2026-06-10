@@ -86,6 +86,8 @@ n8nctl execution get <execution-id> --logs
 ```bash
 n8nctl credential list [--type <t>]     # derive từ workflow nodes
 n8nctl credential schema <type>         # schema của credential type
+n8nctl credential create <file>         # tạo credential từ file JSON ({name,type,data})
+n8nctl credential create <file> --no-validate  # bỏ qua pre-flight schema check
 n8nctl tag list
 n8nctl tag create <name>
 n8nctl auth {login|status|logout}

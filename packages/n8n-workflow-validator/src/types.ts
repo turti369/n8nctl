@@ -1,4 +1,4 @@
-export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
+export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface ValidationIssue {
   severity: Severity;

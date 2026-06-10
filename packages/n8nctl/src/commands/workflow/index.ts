@@ -18,6 +18,8 @@ import { createWatchCommand } from './watch.js';
 import { createStatusCommand } from './status.js';
 import { createRefreshCommand } from './refresh.js';
 import { createSchemaCommand } from './schema.js';
+import { createRunCommand } from './run.js';
+import { createNormalizeCommand } from './normalize.js';
 
 export function createWorkflowCommand(): Command {
   const cmd = new Command('workflow').alias('wf').description('Manage n8n workflows');
@@ -30,9 +32,11 @@ export function createWorkflowCommand(): Command {
   cmd.addCommand(createDeactivateCommand());
   cmd.addCommand(createRefreshCommand());
   cmd.addCommand(createTriggerWebhookCommand());
+  cmd.addCommand(createRunCommand());
   cmd.addCommand(createBackupCommand());
   cmd.addCommand(createDeleteCommand());
   cmd.addCommand(createValidateCommand());
+  cmd.addCommand(createNormalizeCommand());
   cmd.addCommand(createSchemaCommand());
   cmd.addCommand(createDiffCommand());
   cmd.addCommand(createRestoreCommand());

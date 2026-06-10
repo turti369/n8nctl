@@ -1,17 +1,37 @@
 import type { Workflow } from '../types/n8n.js';
 
 /**
- * n8n Public API rejects these fields when included in POST/PUT bodies:
- * - id, createdAt, updatedAt, versionId → server-generated
- * - active → use activate/deactivate endpoints
- * - tags → use PUT /workflows/{id}/tags endpoint
+ * n8n Public API POST /workflows and PUT /workflows/{id} accept a strict
+ * whitelist of exactly four fields. Sending ANY extra field (server-managed,
+ * client-cache, internal-runtime) makes n8n return HTTP 400.
  *
- * Strip them consistently across create/update/restore/import.
+ * Allowed:
+ *   - name, nodes, connections, settings
+ *
+ * Rejected (must be dropped before send):
+ *   - id, createdAt, updatedAt, versionId → server-generated
+ *   - active → use activate/deactivate endpoints
+ *   - tags → use PUT /workflows/{id}/tags endpoint
+ *   - pinData → client-side test fixture cache
+ *   - staticData → server-side runtime state, not part of definition
+ *   - meta → server-side template/marketplace metadata
+ *   - …and any future field n8n adds — whitelist is forward-safe.
+ *
+ * History: pre-0.4.1 this was a blacklist of 6 fields, which let pinData /
+ * staticData / meta through and triggered 400s on workflows backed up after
+ * a manual test run (pinData populated). Switched to whitelist in 0.4.1.
  */
+const ALLOWED_API_FIELDS = ['name', 'nodes', 'connections', 'settings'] as const;
+
 export function stripReadOnlyFields(wf: Partial<Workflow>): Partial<Workflow> {
-  const { id, createdAt, updatedAt, versionId, active, tags, ...body } = wf;
-  void id; void createdAt; void updatedAt; void versionId; void active; void tags;
-  return body;
+  const out: Partial<Workflow> = {};
+  for (const key of ALLOWED_API_FIELDS) {
+    if (key in wf && wf[key] !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (out as any)[key] = wf[key];
+    }
+  }
+  return out;
 }
 
 /**

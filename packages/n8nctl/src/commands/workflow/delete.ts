@@ -43,7 +43,7 @@ export function createDeleteCommand(): Command {
         }
 
         await client.delete(`/workflows/${encodeURIComponent(id)}`);
-        factory.io.stdout.write(`${c.red('✗')} deleted workflow ${c.bold(id)}\n`);
+        factory.io.stdout.write(`${c.green('✓')} deleted workflow ${c.bold(id)}\n`);
       }),
     );
 }

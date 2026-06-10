@@ -75,7 +75,15 @@ export function validate(
     const tag = `nodes[${idx}]${node.name ? ` "${node.name}"` : ''}`;
     if (!node.id || typeof node.id !== 'string') push('HIGH', 'E010', `${tag} missing string "id"`);
     else if (nodeIds.has(node.id)) push('HIGH', 'E011', `${tag} duplicate id "${node.id}"`);
-    else nodeIds.add(node.id);
+    else {
+      nodeIds.add(node.id);
+      // n8n generates UUID-format node ids. Hand-written ids like "1"/"node_a"
+      // are accepted by n8n but break the convention and tooling that assumes
+      // UUIDs. `n8nctl workflow normalize` regenerates these.
+      if (!UUID_RE.test(node.id)) {
+        push('LOW', 'E071', `${tag} id "${node.id}" is not UUID format — run \`n8nctl workflow normalize\``);
+      }
+    }
 
     if (!node.name || typeof node.name !== 'string') push('HIGH', 'E012', `${tag} missing string "name"`);
     else if (nodeNames.has(node.name)) push('HIGH', 'E013', `${tag} duplicate name "${node.name}"`);
@@ -215,6 +223,18 @@ export function validate(
           'E060',
           `${tag} typeVersion ${node.typeVersion} not in catalog (known: ${schema.typeVersion.join(', ')})`,
         );
+      } else if (
+        Array.isArray(schema.typeVersion) &&
+        schema.typeVersion.length > 0 &&
+        typeof node.typeVersion === 'number'
+      ) {
+        // Warn (not fix) when an older-but-valid typeVersion is used. Bumping is
+        // risky (params differ across versions) — surface it so /n8n-build can
+        // pick the latest at generation time.
+        const latest = Math.max(...schema.typeVersion);
+        if (node.typeVersion < latest) {
+          push('MEDIUM', 'E072', `${tag} typeVersion ${node.typeVersion} is outdated (latest: ${latest})`);
+        }
       }
 
       const params = (node.parameters ?? {}) as Record<string, unknown>;
@@ -300,12 +320,32 @@ export function validate(
     });
   }
 
+  // Layer 7: Workflow settings hygiene — executions are invisible for debugging
+  // when error/manual saving is off. n8n falls back to instance defaults when
+  // unset, which are frequently "none" — surface it so the workflow is
+  // observable. `n8nctl workflow normalize` injects sensible defaults.
+  const settings = (wf.settings ?? {}) as Record<string, unknown>;
+  const missingLog: string[] = [];
+  if (!('saveDataErrorExecution' in settings)) missingLog.push('saveDataErrorExecution');
+  if (!('saveManualExecutions' in settings)) missingLog.push('saveManualExecutions');
+  if (missingLog.length > 0) {
+    push(
+      'MEDIUM',
+      'E070',
+      `workflow "settings" missing ${missingLog.join(', ')} — executions may not be logged for debugging ` +
+        `(run \`n8nctl workflow normalize\`)`,
+    );
+  }
+
   const blocking = issues.some(
     (i) => i.severity === 'CRITICAL' || i.severity === 'HIGH' || (options.strict && i.severity === 'MEDIUM'),
   );
 
   return { valid: !blocking, issues, nodeCount: nodes.length };
 }
+
+/** UUID format (any version) — n8n generates UUID node ids. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isExpression(value: unknown): boolean {
   return typeof value === 'string' && /^=/.test(value);

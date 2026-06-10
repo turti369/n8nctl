@@ -58,3 +58,24 @@ export async function deletePassword(account: string): Promise<boolean> {
 export function keyringAccountFor(profileName: string): string {
   return `profile:${profileName}`;
 }
+
+/** Keyring account holding the n8n login password for session mode. */
+export function keyringPasswordAccountFor(profileName: string): string {
+  return `profile:${profileName}:password`;
+}
+
+/** Keyring account holding the cached /rest session cookie. */
+export function keyringCookieAccountFor(profileName: string): string {
+  return `profile:${profileName}:cookie`;
+}
+
+/**
+ * Delete ALL keyring material for a profile: API key, session password, and
+ * cached cookie. Unconditional + idempotent (deletePassword no-throws on a
+ * missing account) so logout/remove never leave orphaned secrets behind.
+ */
+export async function purgeProfileSecrets(profileName: string): Promise<void> {
+  await deletePassword(keyringAccountFor(profileName));
+  await deletePassword(keyringPasswordAccountFor(profileName));
+  await deletePassword(keyringCookieAccountFor(profileName));
+}

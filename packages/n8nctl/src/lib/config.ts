@@ -6,11 +6,24 @@ import yaml from 'js-yaml';
 import lockfile from 'proper-lockfile';
 import { ValidationError } from './errors.js';
 
+export interface SessionConfig {
+  /** n8n UI login email for /rest session auth. */
+  email: string;
+  /** True if the login password is in the OS keyring (vs not stored — cookie-only). */
+  passwordInKeyring?: boolean;
+  /** Cookie-only mode: never store the password; re-prompt on cookie expiry. */
+  cookieOnly?: boolean;
+}
+
 export interface Profile {
   host: string;
   keyStoredInKeyring?: boolean;
   apiKey?: string;
   insecure?: boolean;
+  /** Which auth methods this profile holds. API key for reads, session for run. */
+  authMethods?: Array<'api-key' | 'session'>;
+  /** Internal /rest session-mode credentials (for `workflow run`). */
+  session?: SessionConfig;
 }
 
 export interface ConfigFile {

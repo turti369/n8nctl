@@ -27,10 +27,12 @@ n8nctl workflow deactivate <id>
 n8nctl workflow refresh <id> [--delay <ms>]                # v0.2.5: deactivate→wait→activate to refresh n8n webhook router cache
 n8nctl workflow trigger-webhook <id> [--data <json>] [--wait --timeout <ms>] \
   [--auth-bearer <token>] [--auth-basic <user:pass>] [--auth-header "Name: Value"]    # v0.2; pre-checks active, --test for /webhook-test/
+n8nctl workflow run <id> [--trigger <node name>] [--wait] [--timeout <ms>]   # v0.5: execute headless via /rest session (Public API has no execute). For manual/scheduled/sub-workflow; bypasses webhook router (#21614). Needs `auth login --session`
 n8nctl workflow backup <id> [-o <dir>]
 n8nctl workflow watch [--workflow <id>] [--status <s>] [--interval <ms>]   # v0.2: realtime tail
 n8nctl workflow delete <id> [--yes]
-n8nctl workflow validate <file.json> [--strict]
+n8nctl workflow validate <file.json> [--strict]            # v0.5: +E070 settings-no-logs, E071 node-id-not-uuid, E072 typeVersion-outdated
+n8nctl workflow normalize <file.json> [-o <out>] [-w]      # v0.5: fix node-id→UUID + inject save-log settings (deterministic). create/update auto-normalize (--no-normalize to skip)
 n8nctl workflow diff <id> <file.json>                      # preview changes
 n8nctl workflow restore <backup.json> [--activate]
 n8nctl workflow tag <id> <tag-names...> [--replace --create]
@@ -51,11 +53,14 @@ n8nctl execution last-error --workflow <id> [--summary]
 ```bash
 n8nctl credential list [--type <t>]                     # derived from workflow nodes
 n8nctl credential schema <type>
+n8nctl credential create <file>                          # POST /credentials from JSON ({name,type,data})
+n8nctl credential create <file> --no-validate            # skip schema pre-flight
 n8nctl tag list
 n8nctl tag create <name>                                 # max 24 chars (n8n limit)
 n8nctl auth login [--host <url>] [--profile <name>] [--insecure]
+n8nctl auth login --session [--email <addr>] [--cookie-only]   # v0.5: email/password for `workflow run` (/rest). Cookie+password in keyring. Use automation member user
 n8nctl auth status
-n8nctl auth logout [--profile <name>]
+n8nctl auth logout [--profile <name>]                          # v0.5: purges api-key + session password + cookie
 n8nctl profile {list|add|switch|remove}
 n8nctl config {get|set|list}
 n8nctl doctor                                            # 10 checks incl. write permission (v0.2)
@@ -185,7 +190,7 @@ curl -s -H "X-N8N-API-KEY: $N8N_API_KEY" "$N8N_HOST/api/v1/<endpoint>"
 ```
 
 ### Important API quirks (not obvious)
-- **NO `/workflows/:id/execute` endpoint exists** — workflows trigger only via webhook URL, schedule (cron), or n8n UI. Use `n8nctl workflow trigger-webhook` which handles this.
+- **NO `/workflows/:id/execute` in the PUBLIC API** — but `n8nctl workflow run` (v0.5) executes headless via the internal `/rest/.../run` (session cookie auth), the same endpoint the UI "Execute Workflow" button uses. Use `workflow run` for manual/scheduled/sub-workflows; `trigger-webhook` for webhook-path tests.
 - **NO `GET /credentials` list endpoint** — CLI derives from workflow nodes. To get credential metadata, use `credential schema <type>` instead.
 - `activate/deactivate` is `POST /workflows/{id}/activate`, NOT `PATCH` on the workflow.
 - Workflow `PUT /workflows/{id}` replaces the full body; DO NOT include `id`, `createdAt`, `updatedAt`, `versionId`, `active`, or `tags` fields in the body — the API rejects them. Use `n8nctl workflow update` which handles stripping.

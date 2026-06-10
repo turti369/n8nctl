@@ -6,7 +6,7 @@ const MINIMAL_WORKFLOW = {
   name: 'Test',
   nodes: [
     {
-      id: 'a',
+      id: '550e8400-e29b-41d4-a716-446655440000',
       name: 'Manual Trigger',
       type: 'n8n-nodes-base.manualTrigger',
       typeVersion: 1,
@@ -15,6 +15,12 @@ const MINIMAL_WORKFLOW = {
     },
   ],
   connections: {},
+  // execution-log settings so E070 doesn't fire (the new "clean" standard)
+  settings: {
+    executionOrder: 'v1',
+    saveDataErrorExecution: 'all',
+    saveManualExecutions: true,
+  },
 };
 
 describe('validate', () => {

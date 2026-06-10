@@ -6,11 +6,136 @@ import { isKeyringAvailable } from '../lib/keyring.js';
 import { N8nClient } from '../lib/api.js';
 import { c } from '../lib/io.js';
 import { AuthError } from '../lib/errors.js';
+import type { WorkflowTag } from '../types/n8n.js';
 
 interface CheckResult {
   name: string;
   status: 'ok' | 'warn' | 'fail';
   detail: string;
+}
+
+/**
+ * Fixed probe-tag name. Reused across runs so a key that lacks DELETE scope
+ * leaves at most ONE leftover tag instead of accumulating a new random tag
+ * every `doctor` invocation.
+ */
+const PROBE_NAME = 'n8nctl-doctor-probe';
+
+/**
+ * Identify tags created by doctor's write-probe so we can reuse / clean them
+ * without touching user-owned tags. Matches:
+ *   - the fixed name `n8nctl-doctor-probe`
+ *   - legacy random-suffix probes from <=0.4.0: `n8nctl-` + 12 base36 chars
+ *
+ * Deliberately strict (exactly 12 trailing chars) so a user's own tag like
+ * `n8nctl-prod` or `n8nctl-deploy` is never mistaken for a probe.
+ */
+export function isProbeTag(name: string): boolean {
+  return name === PROBE_NAME || /^n8nctl-[a-z0-9]{12}$/.test(name);
+}
+
+export interface WriteProbeOutcome {
+  write: CheckResult;
+  delete?: CheckResult;
+}
+
+/**
+ * Probe write + delete permission on /tags WITHOUT accumulating garbage tags.
+ *
+ * Strategy:
+ *   1. List tags; find any leftover probe tags from prior runs.
+ *   2. If a probe tag already exists, write permission was proven earlier —
+ *      reuse it (do NOT create another). This is what stops the tag-rác leak.
+ *   3. Otherwise POST a single fixed-name probe tag to verify create scope.
+ *   4. Best-effort DELETE every probe tag found (new + legacy leftovers):
+ *      - full-scope key → ends with zero probe tags (also cleans history)
+ *      - create-only key → keeps the reused set, never grows it
+ */
+export async function probeWritePermission(client: N8nClient): Promise<WriteProbeOutcome> {
+  let existing: WorkflowTag[] = [];
+  try {
+    const resp = await client.get<{ data: WorkflowTag[] }>('/tags', { limit: 250 });
+    existing = (resp.data ?? []).filter(
+      (t): t is WorkflowTag => typeof t?.name === 'string' && isProbeTag(t.name),
+    );
+  } catch {
+    // If we can't list, fall through to a create attempt below.
+  }
+
+  const probeIds = new Set<string>();
+  let write: CheckResult;
+
+  if (existing.length > 0) {
+    existing.forEach((t) => probeIds.add(t.id));
+    write = {
+      name: 'Write permission (POST /tags)',
+      status: 'ok',
+      detail: 'read-write API key (reused existing probe tag — no new tag created)',
+    };
+  } else {
+    try {
+      const created = await client.post<{ id: string; name: string }>('/tags', {
+        name: PROBE_NAME,
+      });
+      if (created?.id) probeIds.add(created.id);
+      write = {
+        name: 'Write permission (POST /tags)',
+        status: 'ok',
+        detail: 'read-write API key',
+      };
+    } catch (err) {
+      const msg = (err as Error).message;
+      const looks403 = /403|forbidden/i.test(msg);
+      return {
+        write: {
+          name: 'Write permission',
+          status: looks403 ? 'fail' : 'warn',
+          detail: looks403
+            ? 'API key is READ-ONLY — destructive commands will fail mid-pipeline'
+            : msg,
+        },
+      };
+    }
+  }
+
+  // Best-effort cleanup. Stop on the first delete failure: a missing DELETE
+  // scope fails identically for every tag, so retrying is wasted calls.
+  let deleted = 0;
+  let deleteErr: string | null = null;
+  for (const id of probeIds) {
+    try {
+      await client.delete(`/tags/${encodeURIComponent(id)}`);
+      deleted++;
+    } catch (err) {
+      deleteErr = (err as Error).message;
+      break;
+    }
+  }
+
+  const remaining = probeIds.size - deleted;
+  if (!deleteErr) {
+    return {
+      write,
+      delete: {
+        name: 'Delete permission (DELETE /tags/:id)',
+        status: 'ok',
+        detail: 'full read-write-delete',
+      },
+    };
+  }
+
+  const looks403 = /403|forbidden/i.test(deleteErr);
+  return {
+    write,
+    delete: {
+      name: 'Delete permission',
+      status: 'warn',
+      detail: looks403
+        ? `API key can CREATE but not DELETE tags — ${remaining} probe tag(s) remain ` +
+          `(name "${PROBE_NAME}"); remove via n8n UI or grant tag:delete scope`
+        : `probe cleanup failed: ${deleteErr}; ${remaining} probe tag(s) remain`,
+    },
+  };
 }
 
 interface VerboseStats {
@@ -147,62 +272,16 @@ export function createDoctorCommand(): Command {
             });
           }
 
-          // Write permission probe — create + delete a tag to distinguish
-          // read-only API keys from read-write ones. If POST fails, user will
-          // hit 403 mid-pipeline; detecting it here saves a broken deploy.
-          //
-          // n8n enforces a 24-character max on tag names (and misleadingly
-          // returns 409 "Tag already exists" on overrun). Keep the probe name
-          // well under the limit: "n8nctl-" (7) + 12 random chars = 19 chars.
-          const probeSuffix =
-            Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 8);
-          const probeName = `n8nctl-${probeSuffix}`;
-          let createdTagId: string | null = null;
-          try {
-            const created = await client.post<{ id: string; name: string }>('/tags', { name: probeName });
-            createdTagId = created.id;
-            results.push({
-              name: 'Write permission (POST /tags)',
-              status: 'ok',
-              detail: 'read-write API key',
-            });
-          } catch (err) {
-            const msg = (err as Error).message;
-            const looks403 = /403|forbidden/i.test(msg);
-            results.push({
-              name: 'Write permission',
-              status: looks403 ? 'fail' : 'warn',
-              detail: looks403
-                ? 'API key is READ-ONLY — destructive commands will fail mid-pipeline'
-                : msg,
-            });
-          }
+          // Write + delete permission probe. Reuses a fixed-name probe tag so
+          // a key lacking DELETE scope can't accumulate garbage tags on every
+          // run (the pre-0.4.0 behaviour). See probeWritePermission.
+          const probe = await probeWritePermission(client);
+          results.push(probe.write);
+          if (probe.delete) results.push(probe.delete);
 
           // Verbose mode — gather server version, latency, throughput
           if (opts.verbose) {
             await collectVerboseStats(client, auth.host, verbose);
-          }
-
-          // Clean up probe tag
-          if (createdTagId) {
-            try {
-              await client.delete(`/tags/${encodeURIComponent(createdTagId)}`);
-              results.push({
-                name: 'Delete permission (DELETE /tags/:id)',
-                status: 'ok',
-                detail: 'full read-write-delete',
-              });
-            } catch (err) {
-              const msg = (err as Error).message;
-              const looks403 = /403|forbidden/i.test(msg);
-              results.push({
-                name: 'Delete permission',
-                status: 'warn',
-                detail: looks403
-                  ? `API key can CREATE but not DELETE tags — probe tag "${probeName}" left on instance`
-                  : `probe cleanup failed: ${msg}; delete "${probeName}" manually`,
-              });
-            }
           }
         } catch (err) {
           if (err instanceof AuthError) {
@@ -276,7 +355,7 @@ async function collectVerboseStats(
   // skip silently.
   try {
     const resp = await fetch(`${host}/api/v1/workflows?limit=1`, {
-      headers: { 'User-Agent': 'n8nctl/0.3.0' },
+      headers: { 'User-Agent': 'n8nctl/0.4.0' },
     });
     const version = resp.headers.get('x-n8n-version');
     if (version) out.serverVersion = version;

@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import inquirer from 'inquirer';
 import { withAction } from '../../lib/runtime.js';
 import { readConfig, updateConfig } from '../../lib/config.js';
-import { deletePassword, keyringAccountFor } from '../../lib/keyring.js';
+import { purgeProfileSecrets } from '../../lib/keyring.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 
@@ -40,9 +40,8 @@ export function createRemoveCommand(): Command {
           }
         }
 
-        if (profile.keyStoredInKeyring) {
-          await deletePassword(keyringAccountFor(name));
-        }
+        // Purge ALL secrets (api-key + session password + cookie).
+        await purgeProfileSecrets(name);
         await updateConfig((cfg) => {
           delete cfg.profiles[name];
           if (cfg.activeProfile === name) {
@@ -50,7 +49,7 @@ export function createRemoveCommand(): Command {
           }
           return cfg;
         });
-        factory.io.stdout.write(`${c.red('✗')} removed profile "${name}"\n`);
+        factory.io.stdout.write(`${c.green('✓')} removed profile "${name}"\n`);
       }),
     );
 }
