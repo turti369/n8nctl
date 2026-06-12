@@ -4,6 +4,7 @@ import path from 'node:path';
 import { withAction } from '../../lib/runtime.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
+import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
 // Aligned with ALLOWED_API_FIELDS (workflow-body.ts): staticData is server-side
@@ -15,54 +16,58 @@ interface DiffOpts {
   full?: boolean;
 }
 
+export async function diffHandler(
+  factory: Factory,
+  opts: DiffOpts,
+  args: string[],
+): Promise<void> {
+  const [id, file] = args;
+  const absPath = path.resolve(file);
+
+  let local: Workflow;
+  try {
+    local = JSON.parse(await fs.readFile(absPath, 'utf8')) as Workflow;
+  } catch (err) {
+    throw new ValidationError(`Cannot parse ${absPath}: ${(err as Error).message}`);
+  }
+
+  const client = await factory.client();
+  const remote = await client.get<Workflow>(`/workflows/${encodeURIComponent(id)}`);
+
+  const changes = computeDiff(remote, local);
+
+  if (changes.length === 0) {
+    factory.io.stdout.write(`${c.green('✓')} no differences — local matches deployed\n`);
+    return;
+  }
+
+  if (opts.full || factory.flags.json) {
+    const fullPayload = {
+      workflowId: id,
+      remoteName: remote.name,
+      localName: local.name,
+      changes,
+    };
+    factory.io.stdout.write(JSON.stringify(fullPayload, null, 2) + '\n');
+    return;
+  }
+
+  factory.io.stdout.write(`${c.bold('Diff')} ${c.dim(id)}  remote → local\n\n`);
+  for (const change of changes) {
+    const icon =
+      change.kind === 'added' ? c.green('+') : change.kind === 'removed' ? c.red('-') : c.yellow('~');
+    factory.io.stdout.write(`  ${icon} ${change.path}: ${change.summary}\n`);
+  }
+  factory.io.stdout.write(`\n${c.dim(`${changes.length} change(s)`)}\n`);
+}
+
 export function createDiffCommand(): Command {
   return new Command('diff')
     .description('Show differences between a local workflow JSON and the deployed version')
     .argument('<id>', 'workflow ID on server')
     .argument('<file>', 'local JSON file to compare against')
     .option('--full', 'Print full JSON diff instead of summary')
-    .action(
-      withAction<DiffOpts>(async (factory, opts, args) => {
-        const [id, file] = args;
-        const absPath = path.resolve(file);
-
-        let local: Workflow;
-        try {
-          local = JSON.parse(await fs.readFile(absPath, 'utf8')) as Workflow;
-        } catch (err) {
-          throw new ValidationError(`Cannot parse ${absPath}: ${(err as Error).message}`);
-        }
-
-        const client = await factory.client();
-        const remote = await client.get<Workflow>(`/workflows/${encodeURIComponent(id)}`);
-
-        const changes = computeDiff(remote, local);
-
-        if (changes.length === 0) {
-          factory.io.stdout.write(`${c.green('✓')} no differences — local matches deployed\n`);
-          return;
-        }
-
-        if (opts.full || factory.flags.json) {
-          const fullPayload = {
-            workflowId: id,
-            remoteName: remote.name,
-            localName: local.name,
-            changes,
-          };
-          factory.io.stdout.write(JSON.stringify(fullPayload, null, 2) + '\n');
-          return;
-        }
-
-        factory.io.stdout.write(`${c.bold('Diff')} ${c.dim(id)}  remote → local\n\n`);
-        for (const change of changes) {
-          const icon =
-            change.kind === 'added' ? c.green('+') : change.kind === 'removed' ? c.red('-') : c.yellow('~');
-          factory.io.stdout.write(`  ${icon} ${change.path}: ${change.summary}\n`);
-        }
-        factory.io.stdout.write(`\n${c.dim(`${changes.length} change(s)`)}\n`);
-      }),
-    );
+    .action(withAction<DiffOpts>(diffHandler));
 }
 
 type Change = {

@@ -30,6 +30,81 @@ interface LoginOpts {
   cookieOnly?: boolean;
 }
 
+export async function loginHandler(
+  factory: Factory,
+  opts: LoginOpts,
+  _args: string[],
+): Promise<void> {
+  if (opts.session) {
+    // Session auth attaches to the ACTIVE profile by default (so it
+    // merges with an existing api-key profile), not a literal "default".
+    const cfg = await readConfig();
+    const sessionProfile =
+      opts.profile ?? factory.flags.profile ?? cfg.activeProfile ?? 'default';
+    await sessionLogin(factory, opts, sessionProfile);
+    return;
+  }
+  const profileName = opts.profile ?? factory.flags.profile ?? 'default';
+
+  // The subcommand declares its own --host/--api-key/--profile in
+  // addition to the program-level globals (Commander does not merge
+  // values across the two scopes). Fall back to the global flags so
+  // env vars (N8N_HOST / N8N_API_KEY) and `n8nctl --host X auth login`
+  // both bypass the interactive prompts.
+
+  const answers = await promptMissing({
+    host: opts.host ?? factory.flags.host,
+    apiKey: opts.apiKey ?? factory.flags.apiKey,
+  });
+
+  const host = stripSlash(answers.host);
+  const apiKey = answers.apiKey;
+
+  // Verify credentials by hitting /workflows?limit=1
+  factory.io.stderr.write(`${c.dim('→')} verifying credentials against ${host}...\n`);
+  const client = new N8nClient(
+    { host, apiKey, profileName, source: 'flag' },
+    { insecure: opts.insecure },
+  );
+  try {
+    await client.get('/workflows', { limit: 1 });
+  } catch (err) {
+    throw new AuthError(
+      `Verification failed: ${(err as Error).message}`,
+      'Check the host URL and API key, then re-run `n8nctl auth login`.',
+    );
+  }
+
+  const keyringEnabled = opts.keyring !== false; // defaults true; --no-keyring sets it false
+  const useKeyring = keyringEnabled && (await isKeyringAvailable());
+
+  let stored: 'keyring' | 'file' = 'file';
+  if (useKeyring) {
+    const ok = await setPassword(keyringAccountFor(profileName), apiKey);
+    if (ok) stored = 'keyring';
+  }
+
+  await updateConfig((cfg) => {
+    cfg.profiles[profileName] = {
+      host,
+      keyStoredInKeyring: stored === 'keyring',
+      ...(stored === 'file' ? { apiKey } : {}),
+      ...(opts.insecure ? { insecure: true } : {}),
+    };
+    if (!cfg.activeProfile) cfg.activeProfile = profileName;
+    return cfg;
+  });
+
+  factory.io.stdout.write(`${c.green('✓')} credentials stored for profile "${profileName}" (${stored})\n`);
+  factory.io.stdout.write(`${c.dim('→')} host: ${host}\n`);
+  if (stored === 'file') {
+    factory.io.stderr.write(
+      `${c.yellow('warning')}: key stored in plaintext at config file. ` +
+        `Install keytar support for OS keyring storage.\n`,
+    );
+  }
+}
+
 export function createLoginCommand(): Command {
   return new Command('login')
     .description('Configure credentials interactively (stored in OS keyring by default)')
@@ -41,78 +116,7 @@ export function createLoginCommand(): Command {
     .option('--session', 'Configure internal /rest session auth (email + password) for `workflow run`')
     .option('--email <addr>', 'n8n login email (session mode, non-interactive)')
     .option('--cookie-only', 'Session mode: do NOT store password; re-auth on cookie expiry (higher security)')
-    .action(
-      withAction<LoginOpts>(async (factory, opts) => {
-        if (opts.session) {
-          // Session auth attaches to the ACTIVE profile by default (so it
-          // merges with an existing api-key profile), not a literal "default".
-          const cfg = await readConfig();
-          const sessionProfile =
-            opts.profile ?? factory.flags.profile ?? cfg.activeProfile ?? 'default';
-          await sessionLogin(factory, opts, sessionProfile);
-          return;
-        }
-        const profileName = opts.profile ?? factory.flags.profile ?? 'default';
-
-        // The subcommand declares its own --host/--api-key/--profile in
-        // addition to the program-level globals (Commander does not merge
-        // values across the two scopes). Fall back to the global flags so
-        // env vars (N8N_HOST / N8N_API_KEY) and `n8nctl --host X auth login`
-        // both bypass the interactive prompts.
-
-        const answers = await promptMissing({
-          host: opts.host ?? factory.flags.host,
-          apiKey: opts.apiKey ?? factory.flags.apiKey,
-        });
-
-        const host = stripSlash(answers.host);
-        const apiKey = answers.apiKey;
-
-        // Verify credentials by hitting /workflows?limit=1
-        factory.io.stderr.write(`${c.dim('→')} verifying credentials against ${host}...\n`);
-        const client = new N8nClient(
-          { host, apiKey, profileName, source: 'flag' },
-          { insecure: opts.insecure },
-        );
-        try {
-          await client.get('/workflows', { limit: 1 });
-        } catch (err) {
-          throw new AuthError(
-            `Verification failed: ${(err as Error).message}`,
-            'Check the host URL and API key, then re-run `n8nctl auth login`.',
-          );
-        }
-
-        const keyringEnabled = opts.keyring !== false; // defaults true; --no-keyring sets it false
-        const useKeyring = keyringEnabled && (await isKeyringAvailable());
-
-        let stored: 'keyring' | 'file' = 'file';
-        if (useKeyring) {
-          const ok = await setPassword(keyringAccountFor(profileName), apiKey);
-          if (ok) stored = 'keyring';
-        }
-
-        await updateConfig((cfg) => {
-          cfg.profiles[profileName] = {
-            host,
-            keyStoredInKeyring: stored === 'keyring',
-            ...(stored === 'file' ? { apiKey } : {}),
-            ...(opts.insecure ? { insecure: true } : {}),
-          };
-          if (!cfg.activeProfile) cfg.activeProfile = profileName;
-          return cfg;
-        });
-
-        factory.io.stdout.write(`${c.green('✓')} credentials stored for profile "${profileName}" (${stored})\n`);
-        factory.io.stdout.write(`${c.dim('→')} host: ${host}\n`);
-        if (stored === 'file') {
-          factory.io.stderr.write(
-            `${c.yellow('warning')}: key stored in plaintext at config file. ` +
-              `Install keytar support for OS keyring storage.\n`,
-          );
-        }
-      }),
-    );
+    .action(withAction<LoginOpts>(loginHandler));
 }
 
 /**

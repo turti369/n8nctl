@@ -6,11 +6,51 @@ import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { readJsonSource } from '../../lib/stdin.js';
 import { normalizeWorkflow } from '../../lib/normalize.js';
+import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface NormalizeOpts {
   output?: string;
   write?: boolean;
+}
+
+export async function normalizeHandler(
+  factory: Factory,
+  opts: NormalizeOpts,
+  args: string[],
+): Promise<void> {
+  const [file] = args;
+  const { raw, source } = await readJsonSource(file);
+
+  let parsed: Workflow;
+  try {
+    parsed = JSON.parse(raw) as Workflow;
+  } catch (err) {
+    throw new ValidationError(`Invalid JSON in ${source}: ${(err as Error).message}`);
+  }
+
+  const { workflow, changes } = normalizeWorkflow(parsed);
+
+  for (const ch of changes) {
+    factory.io.event('workflow-normalized', { change: ch }, `${c.dim('→')} ${ch}`);
+  }
+  if (changes.length === 0) {
+    factory.io.stderr.write(`${c.green('✓')} already normalized — no changes\n`);
+  }
+
+  if (factory.flags.dryRun) {
+    factory.io.stdout.write(`${c.yellow('[dry-run]')} ${changes.length} change(s); not written\n`);
+    return;
+  }
+
+  const json = JSON.stringify(workflow, null, 2) + '\n';
+  const outPath = opts.write ? (source !== '<stdin>' ? source : undefined) : opts.output;
+  if (outPath) {
+    await fs.writeFile(path.resolve(outPath), json, 'utf8');
+    factory.io.stderr.write(`${c.green('✓')} wrote normalized workflow → ${outPath}\n`);
+  } else {
+    factory.io.stdout.write(json);
+  }
 }
 
 export function createNormalizeCommand(): Command {
@@ -23,40 +63,5 @@ export function createNormalizeCommand(): Command {
     .argument('<file>', 'path to workflow JSON file, or "-" for stdin')
     .option('-o, --output <path>', 'write normalized JSON to this path (default: stdout)')
     .option('-w, --write', 'write back in place (overwrites <file>)')
-    .action(
-      withAction<NormalizeOpts>(async (factory, opts, args) => {
-        const [file] = args;
-        const { raw, source } = await readJsonSource(file);
-
-        let parsed: Workflow;
-        try {
-          parsed = JSON.parse(raw) as Workflow;
-        } catch (err) {
-          throw new ValidationError(`Invalid JSON in ${source}: ${(err as Error).message}`);
-        }
-
-        const { workflow, changes } = normalizeWorkflow(parsed);
-
-        for (const ch of changes) {
-          factory.io.event('workflow-normalized', { change: ch }, `${c.dim('→')} ${ch}`);
-        }
-        if (changes.length === 0) {
-          factory.io.stderr.write(`${c.green('✓')} already normalized — no changes\n`);
-        }
-
-        if (factory.flags.dryRun) {
-          factory.io.stdout.write(`${c.yellow('[dry-run]')} ${changes.length} change(s); not written\n`);
-          return;
-        }
-
-        const json = JSON.stringify(workflow, null, 2) + '\n';
-        const outPath = opts.write ? (source !== '<stdin>' ? source : undefined) : opts.output;
-        if (outPath) {
-          await fs.writeFile(path.resolve(outPath), json, 'utf8');
-          factory.io.stderr.write(`${c.green('✓')} wrote normalized workflow → ${outPath}\n`);
-        } else {
-          factory.io.stdout.write(json);
-        }
-      }),
-    );
+    .action(withAction<NormalizeOpts>(normalizeHandler));
 }

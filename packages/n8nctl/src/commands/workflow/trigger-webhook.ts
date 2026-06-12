@@ -6,6 +6,7 @@ import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { waitForExecution } from '../../lib/execution.js';
 import { parsePositiveInt } from '../../lib/util.js';
+import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface TriggerOpts {
@@ -21,153 +22,132 @@ interface TriggerOpts {
   authHeader?: string[];
 }
 
-export function createTriggerWebhookCommand(): Command {
-  return new Command('trigger-webhook')
-    .alias('trigger')
-    .description(
-      'Trigger a workflow by hitting its webhook node URL ' +
-        '(n8n Public API has no /execute endpoint — this is the correct way).',
-    )
-    .argument('<id>', 'workflow ID')
-    .option('--data <json>', 'Inline JSON payload for the webhook body')
-    .option('--file <path>', 'Read payload from JSON file')
-    .option('--method <verb>', 'HTTP method (default: from webhook node config)')
-    .option('--path <path>', 'Override webhook path (useful when multiple webhook nodes exist)')
-    .option('--test', 'Use /webhook-test/ endpoint (workflow in "listen for test event" mode)')
-    .option('--wait', 'Wait for the newest execution to finish after triggering')
-    .option('--timeout <ms>', 'Timeout for --wait polling in ms (default: 120000)')
-    .option('--auth-bearer <token>', 'Send Authorization: Bearer <token>')
-    .option('--auth-basic <user:pass>', 'Send HTTP Basic auth (user:password)')
-    .option(
-      '--auth-header <header>',
-      'Send custom auth header "Name: Value". Repeatable.',
-      (value: string, prev: string[] = []) => [...prev, value],
-    )
-    .action(
-      withAction<TriggerOpts>(async (factory, opts, args) => {
-        const [id] = args;
-        const client = await factory.client();
+export async function triggerWebhookHandler(
+  factory: Factory,
+  opts: TriggerOpts,
+  args: string[],
+): Promise<void> {
+  const [id] = args;
+  const client = await factory.client();
 
-        const wf = await client.get<Workflow>(`/workflows/${encodeURIComponent(id)}`);
+  const wf = await client.get<Workflow>(`/workflows/${encodeURIComponent(id)}`);
 
-        const { node: webhookNode, total: webhookTotal } = findWebhookNode(wf, opts.path);
-        if (!webhookNode) {
-          throw new ValidationError(
-            `Workflow "${wf.name}" has no webhook trigger node`,
-            'Only webhook-triggered workflows can be invoked externally. For scheduled workflows, wait for the cron to fire; manual-trigger workflows can only be run from the n8n UI.',
-          );
-        }
-
-        if (!opts.path && webhookTotal > 1) {
-          factory.io.stderr.write(
-            `${c.yellow('warning')}: workflow has ${webhookTotal} webhook nodes; picked "${webhookNode.name}". ` +
-              `Use --path <path> to disambiguate.\n`,
-          );
-        }
-
-        // Pre-flight: production webhooks (/webhook/) only register when the
-        // workflow is active. Test webhooks (/webhook-test/) only respond when
-        // the n8n editor is "Listening for test event". Trying to trigger an
-        // inactive workflow against /webhook/ returns 404 with a confusing
-        // message; bail early with an actionable hint.
-        if (!opts.test && !wf.active) {
-          throw new ValidationError(
-            `Workflow "${wf.name}" (${id}) is INACTIVE — production webhook is not registered`,
-            `Activate first:    n8nctl workflow activate ${id}\n` +
-              `       Or use --test:    n8nctl workflow trigger-webhook ${id} --test  (requires "Listen for test event" in n8n UI)\n` +
-              `       Or in one shot:   n8nctl workflow update ${id} <file> --activate  /  workflow create <file> --activate`,
-          );
-        }
-
-        const params = webhookNode.parameters as {
-          path?: string;
-          httpMethod?: string;
-          authentication?: string;
-        };
-        const webhookPath = opts.path ?? params.path;
-        const method = (opts.method ?? params.httpMethod ?? 'POST').toUpperCase();
-        if (!webhookPath) {
-          throw new ValidationError(`Webhook node "${webhookNode.name}" has no path configured`);
-        }
-
-        // Warn when webhook requires auth but user did not pass --auth-*
-        const hasAuthFlags =
-          opts.authBearer || opts.authBasic || (opts.authHeader && opts.authHeader.length > 0);
-        if (
-          params.authentication &&
-          params.authentication !== 'none' &&
-          !hasAuthFlags
-        ) {
-          factory.io.stderr.write(
-            `${c.yellow('warning')}: webhook node requires "${params.authentication}" auth but no --auth-* flag was provided. ` +
-              `Request will likely be rejected.\n`,
-          );
-        }
-
-        const prefix = opts.test ? 'webhook-test' : 'webhook';
-        const url = `${client.host}/${prefix}/${encodePathSegments(webhookPath)}`;
-
-        let body: unknown = {};
-        if (opts.file) {
-          const raw = await fs.readFile(opts.file, 'utf8');
-          body = parseJsonOrThrow(raw, opts.file);
-        } else if (opts.data) {
-          body = parseJsonOrThrow(opts.data, '--data');
-        }
-
-        const headers = buildAuthHeaders(opts);
-
-        if (factory.flags.dryRun) {
-          factory.io.stdout.write(
-            `${c.yellow('[dry-run]')} would ${method} ${url} ` +
-              `with ${JSON.stringify(body).length} bytes` +
-              (Object.keys(headers).length > 0 ? ` and auth headers` : '') +
-              `\n`,
-          );
-          return;
-        }
-
-        factory.io.stderr.write(`${c.dim('→')} ${method} ${url}\n`);
-        // Capture trigger timestamp with 30s buffer to absorb client-server
-        // clock skew (NTP drift, VM hibernation). Without this, we risk
-        // filtering out the very execution we just triggered.
-        const triggerStart = new Date();
-        const clockSkewBufferMs = 30_000;
-
-        const resp = await client.webhookRequest<unknown>(url, body, {
-          method,
-          headers,
-          timeout: factory.flags.timeout,
-        });
-        factory.io.stderr.write(`${c.green('✓')} webhook accepted\n`);
-
-        if (opts.wait) {
-          const timeout = parsePositiveInt(opts.timeout, '--timeout', 120000);
-          const spinner = factory.io.spinner('Waiting for execution...').start();
-          try {
-            const execution = await waitForExecution(client, {
-              workflowId: id,
-              since: new Date(triggerStart.getTime() - clockSkewBufferMs),
-              timeoutMs: timeout,
-            });
-            spinner.succeed(
-              `Execution ${execution.id} ${execution.status === 'success' ? c.green('succeeded') : c.red(execution.status ?? 'finished')}`,
-            );
-            await printData(execution, { io: factory.io, opts: factory.flags });
-            if (execution.status && execution.status !== 'success') {
-              process.exitCode = 1;
-            }
-          } catch (err) {
-            spinner.fail(`${c.red((err as Error).message)}`);
-            throw err;
-          }
-        } else if (!factory.flags.json && !factory.flags.jq && !factory.flags.template) {
-          factory.io.stdout.write(JSON.stringify(resp, null, 2) + '\n');
-        } else {
-          await printData(resp, { io: factory.io, opts: factory.flags });
-        }
-      }),
+  const { node: webhookNode, total: webhookTotal } = findWebhookNode(wf, opts.path);
+  if (!webhookNode) {
+    throw new ValidationError(
+      `Workflow "${wf.name}" has no webhook trigger node`,
+      'Only webhook-triggered workflows can be invoked externally. For scheduled workflows, wait for the cron to fire; manual-trigger workflows can only be run from the n8n UI.',
     );
+  }
+
+  if (!opts.path && webhookTotal > 1) {
+    factory.io.stderr.write(
+      `${c.yellow('warning')}: workflow has ${webhookTotal} webhook nodes; picked "${webhookNode.name}". ` +
+        `Use --path <path> to disambiguate.\n`,
+    );
+  }
+
+  // Pre-flight: production webhooks (/webhook/) only register when the
+  // workflow is active. Test webhooks (/webhook-test/) only respond when
+  // the n8n editor is "Listening for test event". Trying to trigger an
+  // inactive workflow against /webhook/ returns 404 with a confusing
+  // message; bail early with an actionable hint.
+  if (!opts.test && !wf.active) {
+    throw new ValidationError(
+      `Workflow "${wf.name}" (${id}) is INACTIVE — production webhook is not registered`,
+      `Activate first:    n8nctl workflow activate ${id}\n` +
+        `       Or use --test:    n8nctl workflow trigger-webhook ${id} --test  (requires "Listen for test event" in n8n UI)\n` +
+        `       Or in one shot:   n8nctl workflow update ${id} <file> --activate  /  workflow create <file> --activate`,
+    );
+  }
+
+  const params = webhookNode.parameters as {
+    path?: string;
+    httpMethod?: string;
+    authentication?: string;
+  };
+  const webhookPath = opts.path ?? params.path;
+  const method = (opts.method ?? params.httpMethod ?? 'POST').toUpperCase();
+  if (!webhookPath) {
+    throw new ValidationError(`Webhook node "${webhookNode.name}" has no path configured`);
+  }
+
+  // Warn when webhook requires auth but user did not pass --auth-*
+  const hasAuthFlags =
+    opts.authBearer || opts.authBasic || (opts.authHeader && opts.authHeader.length > 0);
+  if (
+    params.authentication &&
+    params.authentication !== 'none' &&
+    !hasAuthFlags
+  ) {
+    factory.io.stderr.write(
+      `${c.yellow('warning')}: webhook node requires "${params.authentication}" auth but no --auth-* flag was provided. ` +
+        `Request will likely be rejected.\n`,
+    );
+  }
+
+  const prefix = opts.test ? 'webhook-test' : 'webhook';
+  const url = `${client.host}/${prefix}/${encodePathSegments(webhookPath)}`;
+
+  let body: unknown = {};
+  if (opts.file) {
+    const raw = await fs.readFile(opts.file, 'utf8');
+    body = parseJsonOrThrow(raw, opts.file);
+  } else if (opts.data) {
+    body = parseJsonOrThrow(opts.data, '--data');
+  }
+
+  const headers = buildAuthHeaders(opts);
+
+  if (factory.flags.dryRun) {
+    factory.io.stdout.write(
+      `${c.yellow('[dry-run]')} would ${method} ${url} ` +
+        `with ${JSON.stringify(body).length} bytes` +
+        (Object.keys(headers).length > 0 ? ` and auth headers` : '') +
+        `\n`,
+    );
+    return;
+  }
+
+  factory.io.stderr.write(`${c.dim('→')} ${method} ${url}\n`);
+  // Capture trigger timestamp with 30s buffer to absorb client-server
+  // clock skew (NTP drift, VM hibernation). Without this, we risk
+  // filtering out the very execution we just triggered.
+  const triggerStart = new Date();
+  const clockSkewBufferMs = 30_000;
+
+  const resp = await client.webhookRequest<unknown>(url, body, {
+    method,
+    headers,
+    timeout: factory.flags.timeout,
+  });
+  factory.io.stderr.write(`${c.green('✓')} webhook accepted\n`);
+
+  if (opts.wait) {
+    const timeout = parsePositiveInt(opts.timeout, '--timeout', 120000);
+    const spinner = factory.io.spinner('Waiting for execution...').start();
+    try {
+      const execution = await waitForExecution(client, {
+        workflowId: id,
+        since: new Date(triggerStart.getTime() - clockSkewBufferMs),
+        timeoutMs: timeout,
+      });
+      spinner.succeed(
+        `Execution ${execution.id} ${execution.status === 'success' ? c.green('succeeded') : c.red(execution.status ?? 'finished')}`,
+      );
+      await printData(execution, { io: factory.io, opts: factory.flags });
+      if (execution.status && execution.status !== 'success') {
+        process.exitCode = 1;
+      }
+    } catch (err) {
+      spinner.fail(`${c.red((err as Error).message)}`);
+      throw err;
+    }
+  } else if (!factory.flags.json && !factory.flags.jq && !factory.flags.template) {
+    factory.io.stdout.write(JSON.stringify(resp, null, 2) + '\n');
+  } else {
+    await printData(resp, { io: factory.io, opts: factory.flags });
+  }
 }
 
 function findWebhookNode(
@@ -243,4 +223,29 @@ export function buildAuthHeaders(
     }
   }
   return headers;
+}
+
+export function createTriggerWebhookCommand(): Command {
+  return new Command('trigger-webhook')
+    .alias('trigger')
+    .description(
+      'Trigger a workflow by hitting its webhook node URL ' +
+        '(n8n Public API has no /execute endpoint — this is the correct way).',
+    )
+    .argument('<id>', 'workflow ID')
+    .option('--data <json>', 'Inline JSON payload for the webhook body')
+    .option('--file <path>', 'Read payload from JSON file')
+    .option('--method <verb>', 'HTTP method (default: from webhook node config)')
+    .option('--path <path>', 'Override webhook path (useful when multiple webhook nodes exist)')
+    .option('--test', 'Use /webhook-test/ endpoint (workflow in "listen for test event" mode)')
+    .option('--wait', 'Wait for the newest execution to finish after triggering')
+    .option('--timeout <ms>', 'Timeout for --wait polling in ms (default: 120000)')
+    .option('--auth-bearer <token>', 'Send Authorization: Bearer <token>')
+    .option('--auth-basic <user:pass>', 'Send HTTP Basic auth (user:password)')
+    .option(
+      '--auth-header <header>',
+      'Send custom auth header "Name: Value". Repeatable.',
+      (value: string, prev: string[] = []) => [...prev, value],
+    )
+    .action(withAction<TriggerOpts>(triggerWebhookHandler));
 }

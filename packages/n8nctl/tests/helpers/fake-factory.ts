@@ -30,6 +30,8 @@ export interface FakeFactory {
   factory: Factory;
   /** Mock the Public API (/api/v1) HTTP layer. */
   apiMock: MockAdapter;
+  /** Mock the webhook HTTP layer (trigger-webhook command). */
+  webhookMock: MockAdapter;
   /** Mock the internal /rest session HTTP layer (lazily created on first sessionClient()). */
   sessionMock: () => MockAdapter;
   stdout: () => string;
@@ -65,9 +67,11 @@ export function makeFakeFactory(flags: Partial<GlobalFlags> = {}): FakeFactory {
     logFormat,
     spinner: (text: string) =>
       ({
+        text,
         start() { return this; },
         succeed(t?: string) { write('err', `${t ?? text}\n`); return this; },
         fail(t?: string) { write('err', `${t ?? text}\n`); return this; },
+        warn(t?: string) { write('err', `${t ?? text}\n`); return this; },
         stop() { return this; },
       }) as unknown as ReturnType<IoStreams['spinner']>,
     event: (eventName, payload = {}, text) => {
@@ -88,6 +92,9 @@ export function makeFakeFactory(flags: Partial<GlobalFlags> = {}): FakeFactory {
 
   const client = new N8nClient(TEST_AUTH, { baseBackoffMs: 1, timeout: 1000 });
   const apiMock = new MockAdapter((client as unknown as { http: axios.AxiosInstance }).http);
+  const webhookMock = new MockAdapter(
+    (client as unknown as { webhookHttp: axios.AxiosInstance }).webhookHttp,
+  );
 
   let sessionClient: N8nSessionClient | null = null;
   let sessionMockAdapter: MockAdapter | null = null;
@@ -117,6 +124,7 @@ export function makeFakeFactory(flags: Partial<GlobalFlags> = {}): FakeFactory {
   return {
     factory,
     apiMock,
+    webhookMock,
     sessionMock: () => {
       ensureSessionClient();
       return sessionMockAdapter as MockAdapter;

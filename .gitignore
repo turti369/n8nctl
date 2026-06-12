@@ -17,3 +17,4 @@ Thumbs.db
 # n8n session-mode credentials (never commit)
 .n8n-session.env
 .n8n-cookie.json
+_release/

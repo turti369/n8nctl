@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
 import { ValidationError } from '../../lib/errors.js';
+import type { Factory } from '../../factory.js';
 
 const require = createRequire(import.meta.url);
 
@@ -103,6 +104,53 @@ const NODE_TYPE_HINTS: Record<string, string> = {
   openai: '@n8n/n8n-nodes-langchain.openAi',
 };
 
+export async function schemaHandler(
+  factory: Factory,
+  opts: SchemaOpts,
+  _args: string[],
+): Promise<void> {
+  const catalog = await loadCatalog();
+
+  if (opts.list) {
+    if (!catalog) {
+      throw new ValidationError(
+        'Node catalog not found',
+        'Reinstall: npm install -g @trngthnh369/n8nctl@latest',
+      );
+    }
+    const types = Object.keys(catalog.nodes).sort();
+    await printData(
+      { count: types.length, types, catalogVersion: catalog._meta?.version },
+      { io: factory.io, opts: factory.flags },
+    );
+    return;
+  }
+
+  if (opts.node) {
+    if (!catalog) {
+      throw new ValidationError('Node catalog not found');
+    }
+    const fullType = catalog.nodes[opts.node]
+      ? opts.node
+      : NODE_TYPE_HINTS[opts.node.toLowerCase()] ?? opts.node;
+    const entry = catalog.nodes[fullType];
+    if (!entry) {
+      throw new ValidationError(
+        `Node type "${opts.node}" not in offline catalog`,
+        `Try one of: ${Object.keys(catalog.nodes).slice(0, 8).join(', ')}, ... (use --list to see all)`,
+      );
+    }
+    await printData(
+      { type: fullType, ...entry },
+      { io: factory.io, opts: factory.flags },
+    );
+    return;
+  }
+
+  // Default: workflow resource schema
+  await printData(WORKFLOW_SCHEMA, { io: factory.io, opts: factory.flags });
+}
+
 export function createSchemaCommand(): Command {
   return new Command('schema')
     .description(
@@ -111,48 +159,5 @@ export function createSchemaCommand(): Command {
     )
     .option('--node <type>', 'Show schema for a specific node type (e.g. n8n-nodes-base.httpRequest, or short name like "http")')
     .option('--list', 'List all node types in the offline catalog')
-    .action(
-      withAction<SchemaOpts>(async (factory, opts) => {
-        const catalog = await loadCatalog();
-
-        if (opts.list) {
-          if (!catalog) {
-            throw new ValidationError(
-              'Node catalog not found',
-              'Reinstall: npm install -g @trngthnh369/n8nctl@latest',
-            );
-          }
-          const types = Object.keys(catalog.nodes).sort();
-          await printData(
-            { count: types.length, types, catalogVersion: catalog._meta?.version },
-            { io: factory.io, opts: factory.flags },
-          );
-          return;
-        }
-
-        if (opts.node) {
-          if (!catalog) {
-            throw new ValidationError('Node catalog not found');
-          }
-          const fullType = catalog.nodes[opts.node]
-            ? opts.node
-            : NODE_TYPE_HINTS[opts.node.toLowerCase()] ?? opts.node;
-          const entry = catalog.nodes[fullType];
-          if (!entry) {
-            throw new ValidationError(
-              `Node type "${opts.node}" not in offline catalog`,
-              `Try one of: ${Object.keys(catalog.nodes).slice(0, 8).join(', ')}, ... (use --list to see all)`,
-            );
-          }
-          await printData(
-            { type: fullType, ...entry },
-            { io: factory.io, opts: factory.flags },
-          );
-          return;
-        }
-
-        // Default: workflow resource schema
-        await printData(WORKFLOW_SCHEMA, { io: factory.io, opts: factory.flags });
-      }),
-    );
+    .action(withAction<SchemaOpts>(schemaHandler));
 }

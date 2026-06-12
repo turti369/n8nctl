@@ -1,27 +1,32 @@
 import { Command } from 'commander';
 import { withAction } from '../lib/runtime.js';
 import { ValidationError } from '../lib/errors.js';
+import type { Factory } from '../factory.js';
 
 const SUPPORTED = ['bash', 'zsh', 'fish', 'powershell'] as const;
 type Shell = (typeof SUPPORTED)[number];
+
+export async function completionHandler(
+  factory: Factory,
+  _opts: unknown,
+  args: string[],
+): Promise<void> {
+  const [shell] = args;
+  if (!SUPPORTED.includes(shell as Shell)) {
+    throw new ValidationError(
+      `Unsupported shell "${shell}"`,
+      `Pick one of: ${SUPPORTED.join(', ')}`,
+    );
+  }
+  const script = generate(shell as Shell);
+  factory.io.stdout.write(script);
+}
 
 export function createCompletionCommand(): Command {
   return new Command('completion')
     .description('Generate a shell completion script')
     .argument('<shell>', `shell to generate for (${SUPPORTED.join('|')})`)
-    .action(
-      withAction(async (factory, _opts, args) => {
-        const [shell] = args;
-        if (!SUPPORTED.includes(shell as Shell)) {
-          throw new ValidationError(
-            `Unsupported shell "${shell}"`,
-            `Pick one of: ${SUPPORTED.join(', ')}`,
-          );
-        }
-        const script = generate(shell as Shell);
-        factory.io.stdout.write(script);
-      }),
-    );
+    .action(withAction(completionHandler));
 }
 
 /**

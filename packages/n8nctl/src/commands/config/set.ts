@@ -3,6 +3,7 @@ import { withAction } from '../../lib/runtime.js';
 import { updateConfig } from '../../lib/config.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
+import type { Factory } from '../../factory.js';
 
 const ALLOWED_KEYS: Record<string, (v: string) => unknown> = {
   'activeProfile': (v) => v,
@@ -51,35 +52,39 @@ export function applyConfigKey(
   parent[last] = value;
 }
 
+export async function configSetHandler(
+  factory: Factory,
+  _opts: unknown,
+  args: string[],
+): Promise<void> {
+  const [key, rawValue] = args;
+  const parser = ALLOWED_KEYS[key];
+  if (!parser) {
+    throw new ValidationError(
+      `Unknown config key "${key}"`,
+      `Allowed: ${Object.keys(ALLOWED_KEYS).join(', ')}`,
+    );
+  }
+
+  let value: unknown;
+  try {
+    value = parser(rawValue);
+  } catch (e) {
+    throw new ValidationError(`Invalid value for "${key}": ${(e as Error).message}`);
+  }
+
+  await updateConfig((cfg) => {
+    applyConfigKey(cfg as unknown as Record<string, unknown>, key, value);
+    return cfg;
+  });
+
+  factory.io.stdout.write(`${c.green('✓')} ${key} = ${JSON.stringify(value)}\n`);
+}
+
 export function createSetCommand(): Command {
   return new Command('set')
     .description('Set a config value')
     .argument('<key>', `Config key (one of: ${Object.keys(ALLOWED_KEYS).join(', ')})`)
     .argument('<value>', 'New value')
-    .action(
-      withAction(async (factory, _opts, args) => {
-        const [key, rawValue] = args;
-        const parser = ALLOWED_KEYS[key];
-        if (!parser) {
-          throw new ValidationError(
-            `Unknown config key "${key}"`,
-            `Allowed: ${Object.keys(ALLOWED_KEYS).join(', ')}`,
-          );
-        }
-
-        let value: unknown;
-        try {
-          value = parser(rawValue);
-        } catch (e) {
-          throw new ValidationError(`Invalid value for "${key}": ${(e as Error).message}`);
-        }
-
-        await updateConfig((cfg) => {
-          applyConfigKey(cfg as unknown as Record<string, unknown>, key, value);
-          return cfg;
-        });
-
-        factory.io.stdout.write(`${c.green('✓')} ${key} = ${JSON.stringify(value)}\n`);
-      }),
-    );
+    .action(withAction(configSetHandler));
 }

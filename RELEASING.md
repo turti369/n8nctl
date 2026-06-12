@@ -2,6 +2,31 @@
 
 How to cut a new release of `n8nctl` and `n8n-workflow-validator`.
 
+## Local release channel (npm publish BLOCKED — token rotation pending)
+
+While the npm token cannot be used, every release still gets a git tag and
+`npm pack` artifacts under `_release/vX.Y.Z/` (gitignored):
+
+```bash
+mkdir -p _release/vX.Y.Z
+npm pack -w packages/n8n-workflow-validator -w packages/n8nctl --pack-destination _release/vX.Y.Z
+```
+
+Install (prefer pack over `npm link` — link breaks on workspace dep hoisting).
+⚠️ The CLI depends on the validator via a semver range, so installing the CLI
+tarball ALONE resolves the validator from the registry (stale 0.3.x). Always
+install BOTH tarballs in one command:
+
+```bash
+npm i -g ./_release/vX.Y.Z/trngthnh369-n8n-workflow-validator-*.tgz \
+          ./_release/vX.Y.Z/trngthnh369-n8nctl-*.tgz
+```
+
+Verify from a CLEAN temp dir before tagging: install both tarballs, check
+`n8nctl --version`, confirm the validator resolves to the local version, and
+run `workflow validate` offline. When the token is rotated: **publish the
+validator BEFORE the CLI** (the CLI's range must resolve on the registry).
+
 ## Prerequisites
 
 1. `N8NCTL_TOKEN` secret is set on the GitHub **`N8NCTL` environment**

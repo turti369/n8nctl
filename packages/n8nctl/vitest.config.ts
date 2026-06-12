@@ -8,7 +8,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/index.ts', 'src/commands/**/index.ts'],
+      // index files are pure commander wiring; types/ is type-only (no runtime)
+      exclude: ['src/index.ts', 'src/commands/**/index.ts', 'src/types/**'],
+      thresholds: {
+        statements: 60,
+        branches: 70,
+        functions: 65,
+        lines: 60,
+      },
     },
   },
 });

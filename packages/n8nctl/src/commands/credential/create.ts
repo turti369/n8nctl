@@ -5,6 +5,7 @@ import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { readJsonSource } from '../../lib/stdin.js';
 import type { N8nClient } from '../../lib/api.js';
+import type { Factory } from '../../factory.js';
 
 interface CreateOpts {
   validate?: boolean;
@@ -87,6 +88,70 @@ async function fetchSchema(client: N8nClient, credType: string): Promise<Credent
   }
 }
 
+export async function createCredentialHandler(
+  factory: Factory,
+  opts: CreateOpts,
+  args: string[],
+): Promise<void> {
+  const [file] = args;
+  const { raw, source } = await readJsonSource(file);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ValidationError(`Invalid JSON in ${source}: ${(err as Error).message}`);
+  }
+
+  assertCredentialPayload(parsed);
+  const body: CredentialPayload = {
+    name: parsed.name,
+    type: parsed.type,
+    data: parsed.data,
+  };
+
+  const client = await factory.client();
+
+  if (opts.validate !== false) {
+    const schema = await fetchSchema(client, body.type);
+    if (schema) {
+      validateAgainstSchema(body.data, schema, body.type);
+    } else {
+      factory.io.event(
+        'credential-schema-unavailable',
+        { level: 'warn', type: body.type },
+        `${c.yellow('warning')}: could not fetch schema for "${body.type}" — skipping pre-validation`,
+      );
+    }
+  }
+
+  if (factory.flags.dryRun) {
+    const fieldCount = Object.keys(body.data).length;
+    factory.io.stdout.write(
+      `${c.yellow('[dry-run]')} would create credential "${body.name}" ` +
+        `(type=${body.type}, ${fieldCount} data fields) from ${source}\n`,
+    );
+    return;
+  }
+
+  const created = await client.post<CreatedCredential>('/credentials', body);
+
+  factory.io.event(
+    'credential-created',
+    { id: created.id, type: created.type, name: created.name },
+    `${c.green('✓')} created credential ${c.bold(created.id)} "${created.name}" (${created.type})`,
+  );
+
+  const safeView = {
+    id: created.id,
+    name: created.name,
+    type: created.type,
+    createdAt: created.createdAt,
+    updatedAt: created.updatedAt,
+  };
+  await printData(safeView, { io: factory.io, opts: factory.flags });
+}
+
 export function createCreateCommand(): Command {
   return new Command('create')
     .description('Create a credential from a JSON file (use "-" for stdin)')
@@ -98,65 +163,5 @@ export function createCreateCommand(): Command {
       '--no-validate',
       'Skip schema validation against /credentials/schema/<type> before POST',
     )
-    .action(
-      withAction<CreateOpts>(async (factory, opts, args) => {
-        const [file] = args;
-        const { raw, source } = await readJsonSource(file);
-
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(raw);
-        } catch (err) {
-          throw new ValidationError(`Invalid JSON in ${source}: ${(err as Error).message}`);
-        }
-
-        assertCredentialPayload(parsed);
-        const body: CredentialPayload = {
-          name: parsed.name,
-          type: parsed.type,
-          data: parsed.data,
-        };
-
-        const client = await factory.client();
-
-        if (opts.validate !== false) {
-          const schema = await fetchSchema(client, body.type);
-          if (schema) {
-            validateAgainstSchema(body.data, schema, body.type);
-          } else {
-            factory.io.event(
-              'credential-schema-unavailable',
-              { level: 'warn', type: body.type },
-              `${c.yellow('warning')}: could not fetch schema for "${body.type}" — skipping pre-validation`,
-            );
-          }
-        }
-
-        if (factory.flags.dryRun) {
-          const fieldCount = Object.keys(body.data).length;
-          factory.io.stdout.write(
-            `${c.yellow('[dry-run]')} would create credential "${body.name}" ` +
-              `(type=${body.type}, ${fieldCount} data fields) from ${source}\n`,
-          );
-          return;
-        }
-
-        const created = await client.post<CreatedCredential>('/credentials', body);
-
-        factory.io.event(
-          'credential-created',
-          { id: created.id, type: created.type, name: created.name },
-          `${c.green('✓')} created credential ${c.bold(created.id)} "${created.name}" (${created.type})`,
-        );
-
-        const safeView = {
-          id: created.id,
-          name: created.name,
-          type: created.type,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-        await printData(safeView, { io: factory.io, opts: factory.flags });
-      }),
-    );
+    .action(withAction<CreateOpts>(createCredentialHandler));
 }
