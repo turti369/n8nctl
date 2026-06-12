@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — Unreleased (Phase 0: hardening + test harness)
+
+Closes every CRITICAL/HIGH/MEDIUM finding from the 2026-06-12 audit (verified
+through the plan-review debate bus — converged round 1, 12/12 findings accepted)
+and introduces a command-handler test harness so handler logic is no longer
+untested. No new user-facing commands — this is a correctness/robustness release.
+
+### Behavioral changes (review before upgrading scripts/skills)
+
+- **`--template` (Handlebars) is now strict.** A reference to an undefined
+  property throws a `ValidationError` (exit 3) instead of silently rendering an
+  empty string. This matches the long-documented contract; fix any template
+  that referenced a field that does not exist. (`output.ts`)
+- **Numeric flags reject non-integers.** `--limit`, `--timeout`, `--poll`,
+  `--delay`, `--interval`, `--concurrency` now error (exit 3) on values like
+  `abc` or `1.5` instead of sending `NaN` to the API. Valid values are
+  unaffected. (`--delay 0` is still allowed = no pause.)
+- **Exit-code MECHANISM changed, VALUES preserved.** Handlers no longer call
+  `process.exit()` (it truncated async stdout flushes on Windows); they set
+  `process.exitCode`. The emitted codes are identical — `workflow status --exit`
+  still yields `0`/`1`, `refresh` still `1` when inactive. See `docs/EXIT_CODES.md`.
+- **`--auth-bearer` + `--auth-basic` together is now an error** instead of
+  silently letting basic win. (`workflow trigger-webhook`)
+
+### Fixed
+
+- **scrubAnsi removes whole escape sequences, not just the introducer.** Error
+  text from the API no longer leaves printable residue like `[2J` / `]0;title`
+  on the terminal. (Note: this is cleanup — the ESC byte was already stripped by
+  the C0 range, so no sequence could ever *execute*; it was never a hijack.)
+- **`workflow tag` / `doctor` no longer silently drop tags past the first 250.**
+  Tag lookups paginate fully via `fetchAllTags()` (cursor-based). `tag list`
+  already had `--all` and is unchanged.
+- **`workflow tag --create` no longer creates tags under `--dry-run`.**
+- **`doctor --verbose` routes through the API client** (honors `--insecure`,
+  timeout, auth, and the real User-Agent) instead of a bare `fetch()` with a
+  stale hardcoded `n8nctl/0.4.0` UA that broke on self-signed TLS instances.
+- **Session `/rest` responses are shape-checked** — a non-object payload throws
+  a clear `ApiError` instead of the old silent `(r.data ?? r)` double-cast.
+- **`config set` rejects prototype-chain key segments** (`__proto__`,
+  `constructor`, `prototype`).
+- **`workflow watch` caps remembered execution IDs** (bounded set, 5000) so a
+  long-running session no longer grows memory without bound.
+- **`workflow diff` no longer lists `staticData`** as a diff field (it is
+  server-side read-only; n8n PUT rejects it — showing it misled reconciliation).
+
+### Changed (internals)
+
+- Command handlers extracted to exported functions (`create`, `activate`,
+  `refresh`, `run`, `tag`, …) so they are unit-testable with an injected
+  Factory — a new in-memory `tests/helpers/fake-factory.ts` captures
+  stdout/stderr and the NDJSON event stream.
+- `lib/version.ts` is the single source for `USER_AGENT` (derived from
+  `package.json`; was hardcoded in three places, one stale).
+- `lib/util.ts` centralizes `sleep()` (was copy-pasted in five files),
+  `parsePositiveInt()`, and a `BoundedSet`. `lib/tags.ts` adds `fetchAllTags()`.
+- CI: `npm audit` is no longer `continue-on-error` (a HIGH production-dep
+  vulnerability now fails the build).
+- Tests: 164 → 220.
+
 ## [0.5.0] — 2026-06-09
 
 Adds **session mode** — authenticate against n8n's internal `/rest` API with a

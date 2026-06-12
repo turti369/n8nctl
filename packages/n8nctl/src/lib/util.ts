@@ -9,18 +9,21 @@ export function sleep(ms: number): Promise<void> {
  * Parse a numeric CLI flag value (--limit, --timeout, --delay, ...).
  * `Number('abc')` is NaN and used to be sent to the n8n API verbatim as the
  * string "NaN"; this guard turns that into a ValidationError (exit 3) instead.
- * Returns `def` when the flag was not passed.
+ * Returns `def` when the flag was not passed. `min` defaults to 1 (most flags
+ * are counts/durations ≥1); pass `min: 0` for flags where 0 is meaningful
+ * (e.g. `--delay 0` = no pause).
  */
 export function parsePositiveInt(
   value: string | number | undefined,
   flagName: string,
   def: number,
+  min = 1,
 ): number {
   if (value === undefined) return def;
   const n = typeof value === 'number' ? value : Number(value);
-  if (!Number.isInteger(n) || n < 1) {
+  if (!Number.isInteger(n) || n < min) {
     throw new ValidationError(
-      `${flagName} must be a positive integer, got "${value}"`,
+      `${flagName} must be an integer >= ${min}, got "${value}"`,
     );
   }
   return n;
