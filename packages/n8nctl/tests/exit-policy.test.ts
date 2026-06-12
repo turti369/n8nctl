@@ -26,7 +26,10 @@ describe('exit-code policy', () => {
     const offenders: string[] = [];
     for (const file of tsFilesUnder(COMMANDS_DIR)) {
       const src = readFileSync(file, 'utf8');
-      const lines = src.split('\n');
+      // Split CRLF-safe: a trailing \r blocks the line-comment regex below
+      // (JS '.' does not match \r), turning full-line comments into false
+      // positives on Windows working trees with core.autocrlf=true.
+      const lines = src.split(/\r?\n/);
       lines.forEach((line, i) => {
         const noComment = line.replace(/\/\/.*$/, '');
         if (noComment.includes('process.exit(')) {
