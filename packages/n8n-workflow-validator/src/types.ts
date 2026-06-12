@@ -4,7 +4,15 @@ export interface ValidationIssue {
   severity: Severity;
   code: string;
   msg: string;
+  /** true when `n8nctl workflow normalize` can fix this mechanically. */
+  fixable?: boolean;
 }
+
+/**
+ * Severity policy profile: which severities BLOCK (valid=false).
+ *   dev = CRITICAL only · ci = CRITICAL+HIGH (default) · strict = +MEDIUM.
+ */
+export type ValidationProfile = 'dev' | 'ci' | 'strict';
 
 export interface ValidationResult {
   valid: boolean;
@@ -53,5 +61,8 @@ export interface WorkflowNode {
 
 export interface ValidateOptions {
   catalog?: NodeCatalog | null;
+  /** Back-compat alias of profile 'strict'. */
   strict?: boolean;
+  /** Severity policy profile (default 'ci'). Takes precedence over `strict`. */
+  profile?: ValidationProfile;
 }

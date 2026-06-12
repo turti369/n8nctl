@@ -70,13 +70,13 @@ export function createDiffCommand(): Command {
     .action(withAction<DiffOpts>(diffHandler));
 }
 
-type Change = {
+export type Change = {
   kind: 'added' | 'removed' | 'modified';
   path: string;
   summary: string;
 };
 
-function computeDiff(remote: Workflow, local: Workflow): Change[] {
+export function computeDiff(remote: Workflow, local: Workflow): Change[] {
   const changes: Change[] = [];
 
   if (remote.name !== local.name) {

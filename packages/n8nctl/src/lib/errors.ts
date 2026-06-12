@@ -5,6 +5,12 @@ export enum ExitCode {
   ValidationError = 3,
   NetworkError = 4,
   InternalError = 5,
+  /**
+   * A gate command ran the workflow/request successfully but the stated
+   * expectation failed (verify gate, --expect-status). Distinct from infra
+   * errors 1-5 so agents can tell "broken pipeline" from "failed assertion".
+   */
+  AssertionFailed = 6,
 }
 
 export class N8nCtlError extends Error {
@@ -42,6 +48,13 @@ export class ValidationError extends N8nCtlError {
   constructor(message: string, hint?: string) {
     super(message, ExitCode.ValidationError, hint);
     this.name = 'ValidationError';
+  }
+}
+
+export class AssertionFailedError extends N8nCtlError {
+  constructor(message: string, hint?: string) {
+    super(message, ExitCode.AssertionFailed, hint);
+    this.name = 'AssertionFailedError';
   }
 }
 

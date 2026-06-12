@@ -11,6 +11,7 @@ get new numbers, existing numbers never change meaning.
 | 3 | ValidationError | Bad input — invalid flag value, malformed JSON, failed local validation |
 | 4 | NetworkError | Host unreachable / TLS / DNS / connection failure |
 | 5 | InternalError | Unexpected CLI failure (bug) — re-run with `N8NCTL_DEBUG=1` |
+| 6 | AssertionFailed | The workflow/request RAN, but a stated expectation failed: `workflow verify` gate (CẦN/ĐỦ), `trigger-webhook --expect-status` mismatch. Added in 0.7.0 |
 
 ## Semantic status signals (not errors)
 
@@ -30,5 +31,6 @@ should treat `1` as the "false/failed-run" answer, not an infrastructure error.
   exits the process (so pending stdout/stderr flushes are not truncated on
   Windows). Handlers set `process.exitCode` and `return`, or throw an
   `N8nCtlError` subclass (which maps to the table above).
-- Reserved for a future release: `6 = AssertionFailed` (a workflow ran but an
-  expectation file failed) — distinct from infra errors `1–5`. Not yet emitted.
+- `6 = AssertionFailed` is ACTIVE since 0.7.0 (`workflow verify`,
+  `trigger-webhook --expect-status`). Scripts that treated every non-zero as
+  "infra failure" should special-case 6 as "ran fine, assertion failed".

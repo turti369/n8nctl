@@ -137,6 +137,35 @@ export class N8nClient {
     );
   }
 
+  /**
+   * Single-shot webhook request that exposes the EXACT response status.
+   * Deliberately no retry: --expect-status gates need the true status, and a
+   * retried POST can double-fire the workflow. Non-2xx does NOT throw —
+   * callers compare the status themselves.
+   */
+  async webhookProbe(
+    url: string,
+    data: unknown,
+    opts: WebhookRequestOptions = {},
+  ): Promise<{ status: number; body: unknown }> {
+    this.onEvent?.({
+      event: 'http-request',
+      payload: { label: 'webhook-probe', method: opts.method ?? 'POST', url, attempt: 1 },
+    });
+    const resp = await this.webhookHttp.request({
+      method: opts.method ?? 'POST',
+      url,
+      data,
+      headers: opts.headers,
+      timeout: opts.timeout,
+    });
+    this.onEvent?.({
+      event: 'http-response',
+      payload: { label: 'webhook-probe', method: opts.method ?? 'POST', url, status: resp.status, attempt: 1 },
+    });
+    return { status: resp.status, body: resp.data };
+  }
+
   get<T = unknown>(url: string, params?: Record<string, unknown>): Promise<T> {
     return this.request<T>({ method: 'GET', url, params });
   }

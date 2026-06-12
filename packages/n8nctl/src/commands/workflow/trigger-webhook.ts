@@ -1,11 +1,13 @@
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
-import { ValidationError } from '../../lib/errors.js';
+import { ValidationError, ApiError, AssertionFailedError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { waitForExecution } from '../../lib/execution.js';
 import { parsePositiveInt } from '../../lib/util.js';
+import { redactExecutionData } from '../../lib/redact-execution.js';
 import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
@@ -20,6 +22,23 @@ interface TriggerOpts {
   authBearer?: string;
   authBasic?: string;
   authHeader?: string[];
+  expectStatus?: string | number;
+  capture?: string;
+  unsafeRawIo?: boolean;
+}
+
+/** Write the webhook response to disk (redacted unless --unsafe-raw-io). */
+async function captureResponse(
+  factory: Factory,
+  file: string,
+  payload: { status: number | null; body: unknown },
+  unsafeRawIo: boolean | undefined,
+): Promise<void> {
+  const safe = unsafeRawIo ? payload : redactExecutionData(payload);
+  await fs.writeFile(path.resolve(file), JSON.stringify(safe, null, 2), 'utf8');
+  factory.io.stderr.write(
+    `${c.dim('→')} captured webhook response → ${file}${unsafeRawIo ? ' (RAW — handle as secret)' : ' (redacted)'}\n`,
+  );
 }
 
 export async function triggerWebhookHandler(
@@ -116,12 +135,44 @@ export async function triggerWebhookHandler(
   const triggerStart = new Date();
   const clockSkewBufferMs = 30_000;
 
-  const resp = await client.webhookRequest<unknown>(url, body, {
-    method,
-    headers,
-    timeout: factory.flags.timeout,
-  });
-  factory.io.stderr.write(`${c.green('✓')} webhook accepted\n`);
+  let resp: unknown;
+  if (opts.expectStatus !== undefined || opts.capture) {
+    // Probe path: single-shot (no retry → no double-fire) with the exact
+    // response status, so --expect-status can gate and --capture can record.
+    const expected =
+      opts.expectStatus !== undefined
+        ? parsePositiveInt(opts.expectStatus, '--expect-status', 0, 100)
+        : undefined;
+    const probe = await client.webhookProbe(url, body, {
+      method,
+      headers,
+      timeout: factory.flags.timeout,
+    });
+    resp = probe.body;
+    if (opts.capture) {
+      await captureResponse(factory, opts.capture, probe, opts.unsafeRawIo);
+    }
+    if (expected !== undefined) {
+      if (probe.status !== expected) {
+        throw new AssertionFailedError(
+          `Webhook returned HTTP ${probe.status}, expected ${expected}`,
+          typeof probe.body === 'string' ? probe.body.slice(0, 200) : JSON.stringify(probe.body)?.slice(0, 200),
+        );
+      }
+      factory.io.stderr.write(`${c.green('✓')} webhook returned expected HTTP ${expected}\n`);
+    } else if (probe.status >= 300) {
+      throw new ApiError(`webhook returned ${probe.status}`, probe.status, probe.body);
+    } else {
+      factory.io.stderr.write(`${c.green('✓')} webhook accepted (HTTP ${probe.status})\n`);
+    }
+  } else {
+    resp = await client.webhookRequest<unknown>(url, body, {
+      method,
+      headers,
+      timeout: factory.flags.timeout,
+    });
+    factory.io.stderr.write(`${c.green('✓')} webhook accepted\n`);
+  }
 
   if (opts.wait) {
     const timeout = parsePositiveInt(opts.timeout, '--timeout', 120000);
@@ -247,5 +298,11 @@ export function createTriggerWebhookCommand(): Command {
       'Send custom auth header "Name: Value". Repeatable.',
       (value: string, prev: string[] = []) => [...prev, value],
     )
+    .option(
+      '--expect-status <code>',
+      'Assert the webhook responds with exactly this HTTP status (single-shot, no retry; mismatch exits 6)',
+    )
+    .option('--capture <file>', 'Write the webhook {status, body} to file (redacted by default)')
+    .option('--unsafe-raw-io', 'Disable redaction in --capture output (handle file as a secret)')
     .action(withAction<TriggerOpts>(triggerWebhookHandler));
 }

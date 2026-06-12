@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-06-12 (Phase 1: verify & debug loop)
+
+The Cần+Đủ test gate moves INTO the CLI (`workflow verify`, exit 6), the debug
+loop gets a per-node `execution logs` view with a default-on redaction
+contract, and rollback becomes a first-class guarded command. Live-verified on
+n8n 1.122.5 (including a cron-registration probe — see Notes).
+
+### Added
+
+- **`workflow verify <workflowId> [--execution <id>] [--run]`** — the
+  CẦN/ĐỦ/TỐT gate, ported 1:1 from the external `_pipeline/test-gate.js` (now
+  retired) and extended: versioned expectation files (`--expect gate.yml`,
+  `version: v1`) with per-node assertions (`nodes[].ran/minItems`),
+  `--expect-fields a,b,c`, `--max-duration-ms` (TỐT warns; `failOnSlow: true`
+  escalates), `--run` (execute via /rest session mode, wait, then gate),
+  `--capture <file>` artifact (redacted by default). **Gate failure exits 6
+  (AssertionFailed)** — distinct from infra errors 1–5; TỐT-only warnings keep
+  exit 0 (the old script's exit 2/3 collapse into 6/0; tier detail lives in
+  `--json` output). **Fails CLOSED** when execution data is pruned/disabled.
+- **`execution logs <id> [--node] [--errors-only] [--io-data]`** — compact
+  per-node view (status, duration, items, error). **Redaction contract**:
+  execution IO is redacted by default (`lib/redact-execution.ts` — secret-named
+  keys + secret-shaped values like JWTs/Bearer/API-key patterns);
+  `--unsafe-raw-io` bypasses with a warning. IO previews are size-trimmed.
+  Exits 1 if any node errored.
+- **`workflow rollback <id> [--to <file>] [--backup-dir <dir>] [--reactivate]`**
+  — first-class rollback with the mandatory ordering: safety snapshot → target
+  selection (the just-written snapshot is **excluded**; newest
+  `*_<id>_*.json` wins, or `--to`) → diff preview → confirm (`--yes` required
+  in non-TTY; fails closed) → restore (4-field whitelist) → post-restore
+  verify → optional `--reactivate`. `--dry-run` stops after the diff and
+  writes nothing.
+- **`trigger-webhook --expect-status <code> --capture <file>`** — single-shot
+  webhook probe (deliberately NO retry → no double-fire, exact status);
+  status mismatch exits 6; capture is redacted by default
+  (`--unsafe-raw-io` to bypass).
+- **`ExitCode.AssertionFailed = 6`** + `AssertionFailedError` (`errors.ts`),
+  documented in `docs/EXIT_CODES.md`.
+- **Validator 0.5.0**: severity policy profiles (`dev` = CRITICAL blocks,
+  `ci` = +HIGH (default, unchanged), `strict` = +MEDIUM; `strict: true` stays
+  as alias) and `fixable: true` annotations on E070/E071 (clearable by
+  `workflow normalize`). CLI: `workflow validate --policy <dev|ci|strict>` —
+  named `--policy` because a subcommand `--profile` can never win against the
+  GLOBAL auth `--profile` flag (commander consumes program-level options
+  before dispatch; verified on commander 12.1).
+
+### Fixed
+
+- **`execution wait` and `execution last-error` are now actually registered.**
+  Both commands existed as source files (and were documented in skills) since
+  the workspace split, but were never added to the `execution` command group —
+  the CLI rejected them with "unknown command".
+
+### Notes (live verification on n8n 1.122.5, single-main)
+
+- **Cron triggers DO register via Public-API activate**: a schedule-trigger
+  workflow created + activated entirely via API fired on schedule (2/2
+  one-minute ticks) with no UI Save. This closes the long-open question from
+  the 0.5.0 POC (webhooks were verified then; cron now too).
+- `workflow verify` / `verify --run` / `workflow rollback` live-verified
+  end-to-end against production on a disposable workflow (created, gated,
+  mutated, rolled back, deleted).
+
 ## [0.6.0] — 2026-06-12 (Phase 0: hardening + test harness)
 
 Closes every CRITICAL/HIGH/MEDIUM finding from the 2026-06-12 audit (verified

@@ -40,8 +40,10 @@ export function validate(
 ): ValidationResult {
   const catalog = options.catalog ?? loadCatalog();
   const issues: ValidationIssue[] = [];
+  // E070/E071 are mechanically fixable by `n8nctl workflow normalize`.
+  const FIXABLE_CODES = new Set(['E070', 'E071']);
   const push = (severity: Severity, code: string, msg: string) =>
-    issues.push({ severity, code, msg });
+    issues.push({ severity, code, msg, ...(FIXABLE_CODES.has(code) ? { fixable: true } : {}) });
 
   // Layer 1: Structural schema
   if (typeof workflow !== 'object' || workflow === null) {
@@ -337,9 +339,18 @@ export function validate(
     );
   }
 
-  const blocking = issues.some(
-    (i) => i.severity === 'CRITICAL' || i.severity === 'HIGH' || (options.strict && i.severity === 'MEDIUM'),
-  );
+  // Severity policy profiles. `strict: true` is kept as an alias of the
+  // 'strict' profile for backward compatibility.
+  //   dev    → only CRITICAL blocks (fast local iteration)
+  //   ci     → CRITICAL + HIGH block (default; pre-0.5.0 behavior)
+  //   strict → CRITICAL + HIGH + MEDIUM block
+  const profile = options.profile ?? (options.strict ? 'strict' : 'ci');
+  const blocking = issues.some((i) => {
+    if (i.severity === 'CRITICAL') return true;
+    if (profile === 'dev') return false;
+    if (i.severity === 'HIGH') return true;
+    return profile === 'strict' && i.severity === 'MEDIUM';
+  });
 
   return { valid: !blocking, issues, nodeCount: nodes.length };
 }

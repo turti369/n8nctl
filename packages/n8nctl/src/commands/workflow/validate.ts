@@ -9,7 +9,15 @@ import type { Factory } from '../../factory.js';
 
 interface ValidateOpts {
   strict?: boolean;
+  /**
+   * Named --policy on the CLI: a local `--profile` can never win against the
+   * GLOBAL auth `--profile` flag — commander consumes program-level options
+   * before dispatching to the subcommand (verified on commander 12.1).
+   */
+  policy?: string;
 }
+
+const PROFILES = ['dev', 'ci', 'strict'] as const;
 
 export async function validateHandler(
   factory: Factory,
@@ -29,7 +37,17 @@ export async function validateHandler(
     throw new ValidationError(`Invalid JSON: ${(e as Error).message}`);
   }
 
-  const result = runValidate(wf, { strict: opts.strict });
+  if (opts.policy && !PROFILES.includes(opts.policy as (typeof PROFILES)[number])) {
+    throw new ValidationError(
+      `Unknown policy "${opts.policy}"`,
+      `Pick one of: ${PROFILES.join(', ')}`,
+    );
+  }
+
+  const result = runValidate(wf, {
+    strict: opts.strict,
+    profile: opts.policy as 'dev' | 'ci' | 'strict' | undefined,
+  });
 
   if (result.valid && result.issues.length === 0) {
     factory.io.stdout.write(
@@ -43,11 +61,17 @@ export async function validateHandler(
     result.issues.forEach((e, i) => {
       const color =
         e.severity === 'CRITICAL' ? c.red : e.severity === 'HIGH' ? c.yellow : c.dim;
+      const fixable = e.fixable ? c.dim(' (fixable — run: n8nctl workflow normalize)') : '';
       factory.io.stderr.write(
-        `  ${i + 1}. ${color(`[${e.severity}]`)} ${e.code}: ${e.msg}\n`,
+        `  ${i + 1}. ${color(`[${e.severity}]`)} ${e.code}: ${e.msg}${fixable}\n`,
       );
     });
     factory.io.stderr.write(`\nTotal: ${result.issues.length} issue(s)\n`);
+    if (result.issues.some((e) => e.fixable)) {
+      factory.io.stderr.write(
+        `${c.dim('hint:')} fixable issues can be cleared with \`n8nctl workflow normalize <file> -w\`\n`,
+      );
+    }
   }
 
   if (!result.valid) {
@@ -59,6 +83,11 @@ export function createValidateCommand(): Command {
   return new Command('validate')
     .description('Validate a workflow JSON file locally (6-layer check)')
     .argument('<file>', 'path to workflow JSON file')
-    .option('--strict', 'Fail on MEDIUM-severity issues too')
+    .option('--strict', 'Fail on MEDIUM-severity issues too (alias of --policy strict)')
+    .option(
+      '--policy <p>',
+      'Severity policy: dev (CRITICAL blocks) | ci (CRITICAL+HIGH, default) | strict (+MEDIUM). ' +
+        'Named --policy because --profile is the global auth-profile flag.',
+    )
     .action(withAction<ValidateOpts>(validateHandler));
 }
