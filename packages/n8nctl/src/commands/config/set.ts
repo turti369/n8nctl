@@ -21,6 +21,36 @@ const ALLOWED_KEYS: Record<string, (v: string) => unknown> = {
   },
 };
 
+const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Apply a dot-path config key to a config object. Exported for tests.
+ * Rejects prototype-chain segments structurally so a future ALLOWED_KEYS
+ * entry can never be turned into prototype pollution.
+ */
+export function applyConfigKey(
+  cfg: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  const parts = key.split('.');
+  for (const p of parts) {
+    if (FORBIDDEN_SEGMENTS.has(p)) {
+      throw new ValidationError(`Config key segment "${p}" is not allowed`);
+    }
+  }
+  if (parts.length === 1) {
+    cfg[parts[0]] = value;
+    return;
+  }
+  const last = parts[parts.length - 1];
+  const parent = parts.slice(0, -1).reduce<Record<string, unknown>>((acc, p) => {
+    if (!acc[p] || typeof acc[p] !== 'object') acc[p] = {};
+    return acc[p] as Record<string, unknown>;
+  }, cfg);
+  parent[last] = value;
+}
+
 export function createSetCommand(): Command {
   return new Command('set')
     .description('Set a config value')
@@ -45,20 +75,7 @@ export function createSetCommand(): Command {
         }
 
         await updateConfig((cfg) => {
-          const parts = key.split('.');
-          if (parts.length === 1) {
-            (cfg as unknown as Record<string, unknown>)[parts[0]] = value;
-            return cfg;
-          }
-          const last = parts[parts.length - 1];
-          const parent = parts.slice(0, -1).reduce<Record<string, unknown>>(
-            (acc, p) => {
-              if (!acc[p] || typeof acc[p] !== 'object') acc[p] = {};
-              return acc[p] as Record<string, unknown>;
-            },
-            cfg as unknown as Record<string, unknown>,
-          );
-          parent[last] = value;
+          applyConfigKey(cfg as unknown as Record<string, unknown>, key, value);
           return cfg;
         });
 

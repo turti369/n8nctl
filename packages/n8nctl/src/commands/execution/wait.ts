@@ -3,6 +3,7 @@ import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
 import { waitForExecution } from '../../lib/execution.js';
 import { c } from '../../lib/io.js';
+import { parsePositiveInt } from '../../lib/util.js';
 
 interface WaitOpts {
   timeout?: string;
@@ -19,8 +20,8 @@ export function createWaitCommand(): Command {
       withAction<WaitOpts>(async (factory, opts, args) => {
         const [id] = args;
         const client = await factory.client();
-        const timeout = opts.timeout ? Number(opts.timeout) : 120000;
-        const pollInterval = opts.poll ? Number(opts.poll) : 2000;
+        const timeout = parsePositiveInt(opts.timeout, '--timeout', 120000);
+        const pollInterval = parsePositiveInt(opts.poll, '--poll', 2000);
 
         const spinner = factory.io.spinner(`Waiting for execution ${id}...`).start();
         try {

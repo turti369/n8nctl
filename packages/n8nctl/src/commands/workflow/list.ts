@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
+import { parsePositiveInt } from '../../lib/util.js';
 import { printData } from '../../lib/output.js';
 import { redactWorkflow } from '../../lib/redact.js';
 import type { Workflow, PaginatedResponse } from '../../types/n8n.js';
@@ -39,7 +40,7 @@ export function createListCommand(): Command {
         } else {
           const resp = await client.get<PaginatedResponse<Workflow>>('/workflows', {
             ...baseParams,
-            limit: opts.limit ? Number(opts.limit) : 100,
+            limit: parsePositiveInt(opts.limit, '--limit', 100),
           });
           workflows = resp.data;
           if (resp.nextCursor && factory.io.isTTY) {

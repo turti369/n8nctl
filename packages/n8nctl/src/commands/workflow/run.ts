@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
 import { c } from '../../lib/io.js';
+import { parsePositiveInt } from '../../lib/util.js';
 
 interface RunOpts {
   trigger?: string;
   wait?: boolean;
-  timeout?: number;
+  timeout?: string | number;
 }
 
 export function createRunCommand(): Command {
@@ -24,7 +25,7 @@ export function createRunCommand(): Command {
         'pick a non-webhook trigger to avoid waiting for a webhook event)',
     )
     .option('--wait', 'Poll the resulting execution to a terminal state and report pass/fail (exit 1 on non-success)')
-    .option('--timeout <ms>', 'Wait timeout in ms (default 120000)', (v) => Number(v))
+    .option('--timeout <ms>', 'Wait timeout in ms (default 120000)')
     .action(
       withAction<RunOpts>(async (factory, opts, args) => {
         const [id] = args;
@@ -50,7 +51,7 @@ export function createRunCommand(): Command {
           return;
         }
 
-        const timeoutMs = opts.timeout && opts.timeout > 0 ? opts.timeout : 120000;
+        const timeoutMs = parsePositiveInt(opts.timeout, '--timeout', 120000);
         const exec = await sc.waitExecution(executionId, { timeoutMs });
         const status = String(exec.status ?? (exec.finished ? 'finished' : 'unknown')).toLowerCase();
         const ok = status === 'success';

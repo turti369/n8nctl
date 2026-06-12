@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { withAction } from '../../lib/runtime.js';
 import { c } from '../../lib/io.js';
+import { parsePositiveInt } from '../../lib/util.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface ExportOpts {
@@ -22,7 +23,7 @@ export function createExportAllCommand(): Command {
     .action(
       withAction<ExportOpts>(async (factory, opts) => {
         const client = await factory.client();
-        const concurrency = Math.max(1, Math.min(20, Number(opts.concurrency ?? 5)));
+        const concurrency = Math.min(20, parsePositiveInt(opts.concurrency, '--concurrency', 5));
 
         const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const outDir = path.resolve(opts.output ?? `./_backups/${ts}`);

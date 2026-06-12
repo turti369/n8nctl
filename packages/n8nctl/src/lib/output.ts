@@ -80,7 +80,7 @@ export function renderTemplate(template: string, data: unknown): string {
 
   const compiled = hb.compile(template, {
     noEscape: true,
-    strict: false,
+    strict: true,
     assumeObjects: false,
   });
 

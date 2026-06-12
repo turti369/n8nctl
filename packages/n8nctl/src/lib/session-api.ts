@@ -2,10 +2,10 @@ import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import https from 'node:https';
 import { runWithRetry, type ClientEvent } from './transport.js';
 import { ApiError, AuthError } from './errors.js';
+import { USER_AGENT } from './version.js';
+import { sleep } from './util.js';
 import type { ResolvedSession } from './auth.js';
 import type { Workflow } from '../types/n8n.js';
-
-const USER_AGENT = 'n8nctl/0.5.0';
 
 export interface SessionClientOptions {
   timeout?: number;
@@ -151,7 +151,7 @@ export class N8nSessionClient {
       method: 'GET',
       url: `/workflows/${encodeURIComponent(id)}`,
     });
-    return (r.data ?? (r as unknown)) as Workflow;
+    return expectRestObject<Workflow>(r?.data ?? r, `workflow ${id}`);
   }
 
   /**
@@ -194,7 +194,7 @@ export class N8nSessionClient {
       method: 'GET',
       url: `/executions/${encodeURIComponent(execId)}`,
     });
-    return (r.data ?? (r as unknown)) as ExecutionState;
+    return expectRestObject<ExecutionState>(r?.data ?? r, `execution ${execId}`);
   }
 
   /** Poll /rest/executions/{id} to a terminal state (robust vs saveManualExecutions). */
@@ -232,6 +232,20 @@ export function pickTrigger(wf: { nodes?: Array<{ name: string; type?: string; d
   return (nonWebhook ?? triggers[0]).name;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+/**
+ * Runtime shape guard for /rest responses. The internal API is unversioned:
+ * some n8n versions wrap payloads in `{ data }`, others return them bare. The
+ * old `(r.data ?? r) as T` double-cast accepted ANY shape and failed with
+ * cryptic downstream errors when /rest changed — now we fail loudly here.
+ */
+function expectRestObject<T>(value: unknown, what: string): T {
+  if (value === null || value === undefined || typeof value !== 'object') {
+    throw new ApiError(
+      `Unexpected /rest response shape for ${what} — expected an object, got ${value === null ? 'null' : typeof value}`,
+      0,
+      value,
+      'The internal /rest API is unversioned and may have changed in this n8n version.',
+    );
+  }
+  return value as T;
 }

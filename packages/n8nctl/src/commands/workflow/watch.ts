@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { c } from '../../lib/io.js';
+import { sleep, parsePositiveInt, BoundedSet } from '../../lib/util.js';
 import type { Execution, PaginatedResponse } from '../../types/n8n.js';
 
 interface WatchOpts {
@@ -8,6 +9,13 @@ interface WatchOpts {
   status?: string;
   interval?: string;
 }
+
+/**
+ * Cap on remembered execution IDs. Each poll returns ≤20 rows, so 5000 IDs
+ * is hours of history headroom while keeping an overnight watch session at
+ * constant memory (pre-0.6.0 the seen-set grew unbounded).
+ */
+const SEEN_CAP = 5000;
 
 export function createWatchCommand(): Command {
   return new Command('watch')
@@ -18,9 +26,9 @@ export function createWatchCommand(): Command {
     .action(
       withAction<WatchOpts>(async (factory, opts) => {
         const client = await factory.client();
-        const pollMs = Math.max(1000, Number(opts.interval ?? 3000));
+        const pollMs = Math.max(1000, parsePositiveInt(opts.interval, '--interval', 3000));
 
-        const seen = new Set<string>();
+        const seen = new BoundedSet<string>(SEEN_CAP);
         const params: Record<string, unknown> = { limit: 20 };
         if (opts.workflow) params.workflowId = opts.workflow;
         if (opts.status) params.status = opts.status;
@@ -75,6 +83,3 @@ function emitRow(stream: NodeJS.WriteStream, e: Execution): void {
   stream.write(line + '\n');
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { c } from '../../lib/io.js';
 import { ApiError, ValidationError } from '../../lib/errors.js';
+import { fetchAllTags } from '../../lib/tags.js';
 import type { WorkflowTag } from '../../types/n8n.js';
 
 interface TagOpts {
@@ -43,9 +44,9 @@ export function createTagCommand(): Command {
         const { id, tagNames } = parseTagArgs(args);
         const client = await factory.client();
 
-        const allTags = await client.get<{ data: WorkflowTag[] }>('/tags', { limit: 250 });
+        const allTags = await fetchAllTags(client);
         const byName = new Map(
-          (allTags.data ?? [])
+          allTags
             .filter((t): t is WorkflowTag => typeof t?.name === 'string')
             .map((t) => [t.name.toLowerCase(), t]),
         );
@@ -64,6 +65,15 @@ export function createTagCommand(): Command {
               null,
               'Pass --create to create missing tags automatically.',
             );
+          }
+          // --dry-run must not mutate: report the would-be creation instead
+          // of POSTing (pre-0.6.0 created tags even under --dry-run).
+          if (factory.flags.dryRun) {
+            const placeholder = { id: '(would-create)', name } as WorkflowTag;
+            resolved.push(placeholder);
+            byName.set(name.toLowerCase(), placeholder);
+            factory.io.stderr.write(`${c.yellow('[dry-run]')} would create tag "${name}"\n`);
+            continue;
           }
           const created = await client.post<WorkflowTag>('/tags', { name });
           resolved.push(created);

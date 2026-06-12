@@ -1,6 +1,7 @@
 import type { N8nClient } from './api.js';
 import type { Execution, PaginatedResponse } from '../types/n8n.js';
 import { ApiError } from './errors.js';
+import { sleep } from './util.js';
 
 export interface WaitOptions {
   workflowId?: string;
@@ -76,6 +77,3 @@ export async function getLastError(
   return resp.data[0] ?? null;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-}

@@ -5,6 +5,7 @@ import { printData } from '../../lib/output.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { waitForExecution } from '../../lib/execution.js';
+import { parsePositiveInt } from '../../lib/util.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface TriggerOpts {
@@ -141,7 +142,7 @@ export function createTriggerWebhookCommand(): Command {
         factory.io.stderr.write(`${c.green('✓')} webhook accepted\n`);
 
         if (opts.wait) {
-          const timeout = opts.timeout ? Number(opts.timeout) : 120000;
+          const timeout = parsePositiveInt(opts.timeout, '--timeout', 120000);
           const spinner = factory.io.spinner('Waiting for execution...').start();
           try {
             const execution = await waitForExecution(client, {
@@ -207,7 +208,16 @@ export function encodePathSegments(path: string): string {
     .join('/');
 }
 
-function buildAuthHeaders(opts: TriggerOpts): Record<string, string> {
+export function buildAuthHeaders(
+  opts: Pick<TriggerOpts, 'authBearer' | 'authBasic' | 'authHeader'>,
+): Record<string, string> {
+  // Both flags write the same Authorization header — pre-0.6.0 basic silently
+  // won because it was processed second.
+  if (opts.authBearer && opts.authBasic) {
+    throw new ValidationError(
+      '--auth-bearer and --auth-basic are mutually exclusive (both set the Authorization header)',
+    );
+  }
   const headers: Record<string, string> = {};
   if (opts.authBearer) {
     headers['Authorization'] = `Bearer ${opts.authBearer}`;

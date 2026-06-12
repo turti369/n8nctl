@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command, Option } from 'commander';
+import { Command, Option, InvalidArgumentError } from 'commander';
 import { createRequire } from 'node:module';
 import { createWorkflowCommand } from './commands/workflow/index.js';
 import { createExecutionCommand } from './commands/execution/index.js';
@@ -26,7 +26,14 @@ program
   .option('--json', 'Output JSON regardless of TTY')
   .option('--jq <expr>', 'Filter output via jq expression')
   .option('--template <tmpl>', 'Format output via Handlebars template')
-  .option('--timeout <ms>', 'HTTP request timeout in ms (default: 30000)', (v) => Number(v))
+  .option('--timeout <ms>', 'HTTP request timeout in ms (default: 30000)', (v) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 1) {
+      // commander prints "error: option '--timeout <ms>' argument 'X' is invalid. <message>"
+      throw new InvalidArgumentError('must be a positive integer (milliseconds)');
+    }
+    return n;
+  })
   .option('--insecure', 'Disable TLS certificate verification (self-signed dev instances only)')
   .option('--dry-run', 'Preview what would change without making destructive API calls')
   .addOption(

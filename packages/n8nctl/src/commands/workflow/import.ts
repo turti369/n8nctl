@@ -5,6 +5,7 @@ import { withAction } from '../../lib/runtime.js';
 import { ValidationError, ApiError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
+import { parsePositiveInt } from '../../lib/util.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface ImportOpts {
@@ -36,7 +37,7 @@ export function createImportCommand(): Command {
         }
 
         const client = await factory.client();
-        const concurrency = Math.max(1, Math.min(10, Number(opts.concurrency ?? 3)));
+        const concurrency = Math.min(10, parsePositiveInt(opts.concurrency, '--concurrency', 3));
 
         type Task = { file: string; workflow: Workflow };
         const tasks: Task[] = [];

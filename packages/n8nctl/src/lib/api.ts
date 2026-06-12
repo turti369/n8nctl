@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import https from 'node:https';
 import { runWithRetry, type ClientEvent } from './transport.js';
+import { USER_AGENT } from './version.js';
 import type { ResolvedAuth } from './auth.js';
 
 export type { ClientEvent } from './transport.js';
@@ -27,8 +28,6 @@ export interface WebhookRequestOptions {
   headers?: Record<string, string>;
   timeout?: number;
 }
-
-const USER_AGENT = 'n8nctl/0.5.0';
 
 export class N8nClient {
   private readonly http: AxiosInstance;
@@ -97,6 +96,24 @@ export class N8nClient {
 
   async request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
     return runWithRetry<T>(this.http, config, 'n8n API', this.retryConfig);
+  }
+
+  /**
+   * Single GET that exposes response HEADERS (server version, rate-limit).
+   * Goes through the same axios instance as every other call so it inherits
+   * auth, timeout, --insecure, and the real User-Agent — used by `doctor
+   * --verbose`, which previously bypassed all of that with a bare fetch().
+   */
+  async probeHeaders(
+    url: string,
+    params?: Record<string, unknown>,
+  ): Promise<Record<string, string>> {
+    const resp = await this.http.request({ method: 'GET', url, params });
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(resp.headers ?? {})) {
+      if (typeof v === 'string') headers[k.toLowerCase()] = v;
+    }
+    return headers;
   }
 
   /**

@@ -24,4 +24,3 @@ jobs:
       - run: npm test
       - name: Check audit (production deps only)
         run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true

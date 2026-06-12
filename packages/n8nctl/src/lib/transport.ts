@@ -1,5 +1,6 @@
 import { type AxiosInstance, type AxiosRequestConfig, AxiosError } from 'axios';
 import { ApiError, NetworkError } from './errors.js';
+import { sleep } from './util.js';
 
 /**
  * Structured lifecycle event for a single HTTP attempt. Emitted for every
@@ -147,6 +148,3 @@ function parseRetryAfter(header: string | number | string[] | undefined): number
   return null;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

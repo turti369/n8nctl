@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
+import { parsePositiveInt } from '../../lib/util.js';
 import type { WorkflowTag } from '../../types/n8n.js';
 
 interface ListOpts {
@@ -25,7 +26,7 @@ export function createListCommand(): Command {
           }
         } else {
           const resp = await client.get<{ data: WorkflowTag[] }>('/tags', {
-            limit: opts.limit ? Number(opts.limit) : 100,
+            limit: parsePositiveInt(opts.limit, '--limit', 100),
           });
           tags = resp.data;
         }

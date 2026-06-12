@@ -6,6 +6,7 @@ import { isKeyringAvailable } from '../lib/keyring.js';
 import { N8nClient } from '../lib/api.js';
 import { c } from '../lib/io.js';
 import { AuthError } from '../lib/errors.js';
+import { fetchAllTags } from '../lib/tags.js';
 import type { WorkflowTag } from '../types/n8n.js';
 
 interface CheckResult {
@@ -54,8 +55,8 @@ export interface WriteProbeOutcome {
 export async function probeWritePermission(client: N8nClient): Promise<WriteProbeOutcome> {
   let existing: WorkflowTag[] = [];
   try {
-    const resp = await client.get<{ data: WorkflowTag[] }>('/tags', { limit: 250 });
-    existing = (resp.data ?? []).filter(
+    const all = await fetchAllTags(client);
+    existing = all.filter(
       (t): t is WorkflowTag => typeof t?.name === 'string' && isProbeTag(t.name),
     );
   } catch {
@@ -281,7 +282,7 @@ export function createDoctorCommand(): Command {
 
           // Verbose mode — gather server version, latency, throughput
           if (opts.verbose) {
-            await collectVerboseStats(client, auth.host, verbose);
+            await collectVerboseStats(client, verbose);
           }
         } catch (err) {
           if (err instanceof AuthError) {
@@ -347,22 +348,17 @@ export function createDoctorCommand(): Command {
 
 async function collectVerboseStats(
   client: N8nClient,
-  host: string,
   out: VerboseStats,
 ): Promise<void> {
-  // Server version — n8n exposes /api/v1/openapi.yml with version info, but
-  // simpler: HEAD on root and read X-N8N-Version header if present, otherwise
-  // skip silently.
+  // Server version + rate-limit headers. Goes through the shared client so
+  // --insecure, timeout, auth, and the real User-Agent apply (pre-0.6.0 this
+  // was a bare fetch() with a stale hardcoded UA that broke on self-signed
+  // TLS instances).
   try {
-    const resp = await fetch(`${host}/api/v1/workflows?limit=1`, {
-      headers: { 'User-Agent': 'n8nctl/0.4.0' },
-    });
-    const version = resp.headers.get('x-n8n-version');
-    if (version) out.serverVersion = version;
-    const remaining = resp.headers.get('x-ratelimit-remaining');
-    if (remaining) out.rateLimitRemaining = remaining;
-    const reset = resp.headers.get('x-ratelimit-reset');
-    if (reset) out.rateLimitReset = reset;
+    const headers = await client.probeHeaders('/workflows', { limit: 1 });
+    if (headers['x-n8n-version']) out.serverVersion = headers['x-n8n-version'];
+    if (headers['x-ratelimit-remaining']) out.rateLimitRemaining = headers['x-ratelimit-remaining'];
+    if (headers['x-ratelimit-reset']) out.rateLimitReset = headers['x-ratelimit-reset'];
   } catch {
     // headers not available, non-fatal
   }

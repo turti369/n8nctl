@@ -1,10 +1,11 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { c } from '../../lib/io.js';
+import { sleep, parsePositiveInt } from '../../lib/util.js';
 import type { Workflow } from '../../types/n8n.js';
 
 interface RefreshOpts {
-  delay?: string;
+  delay?: string | number;
 }
 
 export function createRefreshCommand(): Command {
@@ -17,12 +18,12 @@ export function createRefreshCommand(): Command {
         '(or n8n restart) is guaranteed to register webhook/cron triggers.',
     )
     .argument('<id>', 'workflow ID')
-    .option('--delay <ms>', 'Pause between deactivate and activate (default: 500)', (v) => Number(v))
+    .option('--delay <ms>', 'Pause between deactivate and activate (default: 500)')
     .action(
       withAction<RefreshOpts>(async (factory, opts, args) => {
         const [id] = args;
         const client = await factory.client();
-        const delay = opts.delay !== undefined ? Number(opts.delay) : 500;
+        const delay = parsePositiveInt(opts.delay, '--delay', 500);
 
         const before = await client.get<Workflow>(`/workflows/${encodeURIComponent(id)}`);
 
@@ -31,7 +32,10 @@ export function createRefreshCommand(): Command {
             `${c.yellow('!')} workflow "${before.name}" (${id}) is inactive — nothing to refresh\n` +
               `${c.dim('hint:')} run \`n8nctl workflow activate ${id}\` to set active (then UI "Save" if webhook/cron still doesn't fire)\n`,
           );
-          process.exit(1);
+          // Exit VALUE preserved (1) — only the mechanism changes so pending
+          // stream flushes are not dropped (process.exit truncates async I/O).
+          process.exitCode = 1;
+          return;
         }
 
         if (factory.flags.dryRun) {
@@ -55,7 +59,8 @@ export function createRefreshCommand(): Command {
           factory.io.stderr.write(
             `${c.red('✗')} cycle completed but workflow is still reported inactive\n`,
           );
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
         factory.io.stdout.write(
           `${c.green('✓')} cycled "${after.name}" (${id}) → active\n`,
@@ -69,6 +74,3 @@ export function createRefreshCommand(): Command {
     );
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

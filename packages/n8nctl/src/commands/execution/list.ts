@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
+import { parsePositiveInt } from '../../lib/util.js';
 import type { Execution, PaginatedResponse } from '../../types/n8n.js';
 
 interface ListOpts {
@@ -20,7 +21,7 @@ export function createListCommand(): Command {
       withAction<ListOpts>(async (factory, opts) => {
         const client = await factory.client();
         const params: Record<string, unknown> = {
-          limit: opts.limit ? Number(opts.limit) : 20,
+          limit: parsePositiveInt(opts.limit, '--limit', 20),
         };
         if (opts.workflow) params.workflowId = opts.workflow;
         if (opts.status) params.status = opts.status;

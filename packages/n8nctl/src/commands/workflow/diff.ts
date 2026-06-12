@@ -6,7 +6,10 @@ import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import type { Workflow } from '../../types/n8n.js';
 
-const DIFF_KEYS = ['name', 'nodes', 'connections', 'settings', 'staticData'] as const;
+// Aligned with ALLOWED_API_FIELDS (workflow-body.ts): staticData is server-side
+// read-only — showing it as a diff item misled users into thinking `workflow
+// update` could reconcile it (n8n PUT rejects extra fields with 400).
+const DIFF_KEYS = ['name', 'nodes', 'connections', 'settings'] as const;
 
 interface DiffOpts {
   full?: boolean;

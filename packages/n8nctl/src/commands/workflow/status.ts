@@ -97,7 +97,10 @@ export function createStatusCommand(): Command {
         }
 
         if (opts.exit || !factory.io.isTTY) {
-          process.exit(wf.active ? 0 : 1);
+          // Semantic status signal, NOT an error path: active→0, inactive→1.
+          // Skills branch on these VALUES — preserve them; only the mechanism
+          // changed from process.exit() so stdout flushes are not truncated.
+          process.exitCode = wf.active ? 0 : 1;
         }
       }),
     );
