@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-06-12 (Phase 2: governance & API coverage)
+
+Reaches the rest of the Public-API surface (variables, audit, users, projects,
+source-control), adds a deterministic `workflow scaffold`, grows the validator
+node catalog, and teaches `doctor` to probe license-gated features. Every
+licensed endpoint degrades to an actionable hint on community edition.
+
+### Added
+
+- **`variable list|set|delete`** — manage instance variables (`/api/v1/variables`).
+  `set` is create-or-update by key (falls back to delete+create where the n8n
+  version lacks PUT). License-gated → 403/404 becomes a clear hint.
+- **`audit [--categories <list>] [--days-abandoned <n>]`** — the n8n security
+  audit report (`POST /audit`, report-only; credentials risk, abandoned
+  workflows, instance risks). Categories validated client-side.
+- **`user list|get`** — read-only user inspection (`/api/v1/users`).
+- **`project list`** — read-only project listing (`/api/v1/projects`, license-gated).
+- **`source-control pull [--force]`** — pull from the connected git branch with
+  MANDATORY guardrails (plan dt-r1-05, widest blast radius in the CLI): a
+  pre-pull snapshot bundle of every workflow is written first (rollback point;
+  `--skip-backup` to opt out with a warning), confirm gate (`--yes` required in
+  non-TTY; `--force` gets a louder prompt), and the import result is printed.
+- **`workflow scaffold --from <webhook|cron|manual|file> [--name] [-o]`** —
+  generate a normalize-clean, validator-clean skeleton. Output is **byte-stable**
+  across runs (deterministic node ids from node names) and passes
+  `validate --policy strict` out of the box. Builtins track the catalog's latest
+  typeVersions. `--from` (not `--template`) because `--template` is the global
+  Handlebars-output flag.
+- **`workflow validate --fix`** — apply the mechanical normalize-class fixes
+  (node ids → E071, log settings → E070) in place, then validate. Semantic
+  fixes remain the n8n-fix skill's job.
+- **`doctor`**: license-feature probes (Variables/Projects) reported as
+  warn-with-remediation; **machine-readable `--json` output** with a
+  `remediation` field per failed check (no `doctor --fix` by design — the
+  asymmetric risk of auto-mutating config/keyring outweighs the convenience).
+- **Validator catalog 1.1.0 → 1.2.0**: 21 → 36 nodes (added stickyNote, noOp,
+  googleDrive, errorTrigger, limit, emailSend, telegram, redis, postgres,
+  extractFromFile, convertToFile, html, markdown, langchain agent + chainLlm),
+  prioritized by real usage in the production corpus. Conservative `required`
+  sets (corpus-verified or empty) — zero new false E061/E062 on real workflows.
+
+### Notes
+
+- Live probe of the production instance (1.122.5): Variables and Projects APIs
+  return **403** — surfaced correctly as the license hint. (Confirm the plan
+  tier / API-key scope if these features are expected to be available.)
+
 ## [0.7.0] — 2026-06-12 (Phase 1: verify & debug loop)
 
 The Cần+Đủ test gate moves INTO the CLI (`workflow verify`, exit 6), the debug

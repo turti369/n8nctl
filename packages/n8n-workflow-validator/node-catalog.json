@@ -1,12 +1,13 @@
 {
   "_meta": {
-    "version": "1.1.0",
-    "generated": "2026-04-24",
+    "version": "1.2.0",
+    "generated": "2026-06-12",
     "description": "Offline catalog of top native n8n node types with required/optional parameter schemas. Used by validator Layer 6 + read by Claude via n8n-node-configuration skill.",
     "type_values": ["string", "number", "boolean", "object", "array", "any"],
     "notes": "typeVersion: list of versions this catalog is known-compatible with. If node uses a newer version, warning only. required: must be present AND correct type. optional: if present, must match type. conditionalRequired: required based on another field's value.",
     "changelog": {
-      "1.1.0": "Add typeVersions observed on a live n8n instance: googleSheets 4.5/4.6/4.7, merge 3.2, scheduleTrigger 1.3, langchain.openAi 1.7/1.8."
+      "1.1.0": "Add typeVersions observed on a live n8n instance: googleSheets 4.5/4.6/4.7, merge 3.2, scheduleTrigger 1.3, langchain.openAi 1.7/1.8.",
+      "1.2.0": "Grow catalog from 21 to 36 nodes. Added 15 nodes derived from production corpus (D:/Projects/work/build-workflow) + conservative fallbacks for nodes not present in corpus: stickyNote, noOp, googleDrive, errorTrigger, limit, emailSend, telegram, redis, postgres, extractFromFile, convertToFile, html, markdown, @n8n/n8n-nodes-langchain.agent, @n8n/n8n-nodes-langchain.chainLlm."
     }
   },
   "nodes": {
@@ -301,6 +302,222 @@
       "optional": {
         "options": "object"
       }
+    },
+    "n8n-nodes-base.stickyNote": {
+      "typeVersion": [1],
+      "required": {
+        "content": "string",
+        "height": "number",
+        "width": "number"
+      },
+      "optional": {
+        "color": "number"
+      },
+      "notes": "color: integer 1-7 representing the sticky note color; absent means default yellow. Corpus: 92 uses, typeVersion always 1."
+    },
+    "n8n-nodes-base.noOp": {
+      "typeVersion": [1],
+      "required": {},
+      "optional": {},
+      "notes": "No Operation node — parameters block is always empty {}. Corpus: 59 uses, typeVersion always 1."
+    },
+    "n8n-nodes-base.googleDrive": {
+      "typeVersion": [3],
+      "required": {},
+      "optional": {
+        "operation": "string",
+        "name": "string",
+        "driveId": "object",
+        "folderId": "object",
+        "fileId": "object",
+        "options": "object"
+      },
+      "enums": {
+        "operation": ["upload", "download", "copy", "move", "delete", "share", "createFolder"]
+      },
+      "notes": "Corpus: 21 uses, typeVersion always 3. Upload is most common: folderId (resource locator object) and name always present for upload, driveId optional. operation sometimes absent (node defaults to upload). Resource locator shape: {__rl: true, value, mode, cachedResultName?, cachedResultUrl?}. required:{} is conservative — operation is implicit-defaulted."
+    },
+    "n8n-nodes-base.errorTrigger": {
+      "typeVersion": [1],
+      "required": {},
+      "optional": {},
+      "notes": "Error Trigger node — parameters block is always empty {}. Corpus: 6 uses, typeVersion always 1."
+    },
+    "n8n-nodes-base.limit": {
+      "typeVersion": [1],
+      "required": {},
+      "optional": {
+        "maxItems": "number"
+      },
+      "notes": "Corpus: 4 uses, typeVersion always 1. maxItems optional — absent means empty parameters block (n8n uses a built-in default)."
+    },
+    "n8n-nodes-base.emailSend": {
+      "typeVersion": [2, 2.1],
+      "required": {
+        "fromEmail": "string",
+        "toEmail": "string",
+        "subject": "string",
+        "emailFormat": "string"
+      },
+      "optional": {
+        "html": "string",
+        "text": "string",
+        "options": "object"
+      },
+      "enums": {
+        "emailFormat": ["html", "text", "htmlAndText"]
+      },
+      "conditionalRequired": {
+        "html": { "when": { "emailFormat": "html" }, "type": "string" },
+        "text": { "when": { "emailFormat": "text" }, "type": "string" }
+      },
+      "notes": "Corpus: multiple uses, typeVersion 2.1 only. options.appendAttribution (boolean) and options.ccEmail (string) observed. Credential type: smtp."
+    },
+    "n8n-nodes-base.telegram": {
+      "typeVersion": [1, 1.1, 1.2],
+      "required": {
+        "resource": "string",
+        "operation": "string"
+      },
+      "optional": {
+        "chatId": "string",
+        "text": "string",
+        "additionalFields": "object",
+        "replyMarkup": "string",
+        "options": "object"
+      },
+      "enums": {
+        "resource": ["message", "bot", "callback", "chat", "file"],
+        "operation": ["sendMessage", "sendPhoto", "sendDocument", "sendAudio", "sendVideo", "sendAnimation", "sendSticker", "sendLocation", "sendMediaGroup", "editMessageText", "deleteMessage", "answerInlineQuery"]
+      },
+      "notes": "Not in corpus — added with conservative required params based on documented node structure. Credential type: telegramApi."
+    },
+    "n8n-nodes-base.redis": {
+      "typeVersion": [1],
+      "required": {
+        "operation": "string"
+      },
+      "optional": {
+        "key": "string",
+        "value": "string",
+        "expire": "boolean",
+        "ttl": "number",
+        "options": "object"
+      },
+      "enums": {
+        "operation": ["get", "set", "delete", "incr", "publish", "push", "lpop", "rpop", "lrange", "keys", "exists"]
+      },
+      "notes": "Not in corpus — added with conservative required params. Credential type: redis."
+    },
+    "n8n-nodes-base.postgres": {
+      "typeVersion": [2, 2.1, 2.2, 2.3],
+      "required": {
+        "operation": "string"
+      },
+      "optional": {
+        "resource": "string",
+        "query": "string",
+        "table": "string",
+        "schema": "string",
+        "columns": "string",
+        "additionalFields": "object",
+        "options": "object"
+      },
+      "enums": {
+        "operation": ["select", "insert", "update", "delete", "executeQuery"],
+        "resource": ["database"]
+      },
+      "notes": "Not in corpus — added with conservative required params. Credential type: postgres."
+    },
+    "n8n-nodes-base.extractFromFile": {
+      "typeVersion": [1, 1.1],
+      "required": {
+        "operation": "string"
+      },
+      "optional": {
+        "binaryPropertyName": "string",
+        "options": "object"
+      },
+      "enums": {
+        "operation": ["pdf", "csv", "text", "html", "binaryToPropery", "moveBinaryData"]
+      },
+      "notes": "Corpus: typeVersion 1.1 only. binaryPropertyName defaults to 'data' when absent. Note: 'binaryToPropery' is the canonical (typo) value used by n8n source for the binary-to-property operation."
+    },
+    "n8n-nodes-base.convertToFile": {
+      "typeVersion": [1, 1.1],
+      "required": {
+        "operation": "string"
+      },
+      "optional": {
+        "sourceProperty": "string",
+        "destinationKey": "string",
+        "options": "object"
+      },
+      "enums": {
+        "operation": ["toBinary", "toJson", "toCsv", "toXlsx"]
+      },
+      "notes": "Corpus: typeVersion 1.1 only. sourceProperty is a dot-notation path to the JSON property to convert. options.fileName (string) sets the binary output filename."
+    },
+    "n8n-nodes-base.html": {
+      "typeVersion": [1, 1.1, 1.2],
+      "required": {},
+      "optional": {
+        "operation": "string",
+        "html": "string",
+        "destinationKey": "string",
+        "options": "object"
+      },
+      "enums": {
+        "operation": ["generateHtmlTemplate", "extractHtmlContent", "convertToHtmlTable"]
+      },
+      "notes": "Not in corpus — added with empty required to avoid false positives."
+    },
+    "n8n-nodes-base.markdown": {
+      "typeVersion": [1],
+      "required": {},
+      "optional": {
+        "mode": "string",
+        "markdown": "string",
+        "html": "string",
+        "destinationKey": "string",
+        "options": "object"
+      },
+      "enums": {
+        "mode": ["markdownToHtml", "htmlToMarkdown"]
+      },
+      "notes": "Not in corpus — added with empty required to avoid false positives."
+    },
+    "@n8n/n8n-nodes-langchain.agent": {
+      "typeVersion": [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7],
+      "required": {},
+      "optional": {
+        "agentType": "string",
+        "text": "string",
+        "systemMessage": "string",
+        "promptType": "string",
+        "options": "object"
+      },
+      "enums": {
+        "agentType": ["openAiFunctionsAgent", "reActAgent", "sqlAgent", "conversationalAgent", "toolsAgent"],
+        "promptType": ["auto", "define"]
+      },
+      "notes": "Not in corpus — added with empty required. Agent node is a sub-agent orchestrator; receives LLM + tools as sub-nodes. required:{} is safe since the agent node works without any explicit params when using sub-node connections."
+    },
+    "@n8n/n8n-nodes-langchain.chainLlm": {
+      "typeVersion": [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7],
+      "required": {
+        "promptType": "string"
+      },
+      "optional": {
+        "text": "string",
+        "messages": "object",
+        "batching": "object",
+        "options": "object"
+      },
+      "enums": {
+        "promptType": ["auto", "define"]
+      },
+      "notes": "Corpus: typeVersions 1.4 and 1.7 observed. promptType always present → required. text and messages always present in corpus for promptType='define' but technically optional at the node schema level. batching key added in v1.7 (empty object {}). Connected LLM sub-node required for execution."
     }
   }
 }

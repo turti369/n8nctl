@@ -13,6 +13,13 @@ interface CheckResult {
   name: string;
   status: 'ok' | 'warn' | 'fail';
   detail: string;
+  /**
+   * Machine-readable fix: the exact command/action an agent should run to
+   * resolve this check. Doctor itself never mutates (no --fix by design —
+   * the asymmetric risk of auto-mutating config/keyring outweighs the
+   * convenience; agents execute remediation under their own confirm policy).
+   */
+  remediation?: string;
 }
 
 /**
@@ -195,6 +202,7 @@ export async function doctorHandler(
     name: 'OS keyring (keytar)',
     status: keyring ? 'ok' : 'warn',
     detail: keyring ? 'available' : 'unavailable — credentials fall back to plaintext config',
+    ...(keyring ? {} : { remediation: 'Install/enable the OS credential store, then re-run `n8nctl auth login`' }),
   });
 
   // Env vars
@@ -203,6 +211,7 @@ export async function doctorHandler(
     name: 'Env vars (N8N_API_KEY + N8N_HOST)',
     status: envSet ? 'ok' : 'warn',
     detail: envSet ? 'set' : 'not set — using profile-based auth',
+    ...(envSet ? {} : { remediation: 'export N8N_HOST + N8N_API_KEY, or configure a profile: `n8nctl auth login`' }),
   });
 
   // Auth resolution
@@ -230,6 +239,7 @@ export async function doctorHandler(
         name: 'API connectivity',
         status: 'fail',
         detail: (err as Error).message,
+        remediation: 'Check N8N_HOST is reachable and the API key is valid: `n8nctl auth status`',
       });
     }
 
@@ -272,6 +282,33 @@ export async function doctorHandler(
     results.push(probe.write);
     if (probe.delete) results.push(probe.delete);
 
+    // License-feature probes (read-only): Variables and Projects are paid
+    // n8n features — agents need to know BEFORE invoking variable/project
+    // commands whether the instance supports them.
+    for (const [endpoint, label, command] of [
+      ['/variables', 'License: Variables API', 'n8nctl variable list'],
+      ['/projects', 'License: Projects API', 'n8nctl project list'],
+    ] as const) {
+      try {
+        await client.get(endpoint, { limit: 1 });
+        results.push({ name: label, status: 'ok', detail: `available (${command})` });
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        results.push({
+          name: label,
+          status: 'warn',
+          detail:
+            status === 403 || status === 404
+              ? `license-gated on this instance (HTTP ${status})`
+              : (err as Error).message,
+          remediation:
+            status === 403 || status === 404
+              ? 'Upgrade the n8n plan to use this feature; the CLI command will fail with the same hint'
+              : 'Transient error — re-run doctor',
+        });
+      }
+    }
+
     // Verbose mode — gather server version, latency, throughput
     if (opts.verbose) {
       await collectVerboseStats(client, verbose);
@@ -288,9 +325,27 @@ export async function doctorHandler(
     }
   }
 
+  // --json: machine-readable results incl. per-check `remediation` so agents
+  // can act on failures without parsing the human table.
+  if (factory.flags.json) {
+    const failed0 = results.filter((r) => r.status === 'fail').length;
+    factory.io.stdout.write(
+      JSON.stringify(
+        { checks: results, verbose: opts.verbose ? verbose : undefined, ok: failed0 === 0 && authOk },
+        null,
+        2,
+      ) + '\n',
+    );
+    if (failed0 > 0 || !authOk) process.exitCode = 1;
+    return;
+  }
+
   for (const r of results) {
     const icon = r.status === 'ok' ? c.green('✓') : r.status === 'warn' ? c.yellow('!') : c.red('✗');
     factory.io.stdout.write(`${icon} ${r.name.padEnd(42)} ${r.detail}\n`);
+    if (r.remediation && r.status !== 'ok') {
+      factory.io.stdout.write(`  ${c.dim(`fix: ${r.remediation}`)}\n`);
+    }
   }
 
   if (opts.verbose) {

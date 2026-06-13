@@ -10,6 +10,11 @@ import { createProfileCommand } from './commands/profile/index.js';
 import { createTagNoun } from './commands/tag/index.js';
 import { createDoctorCommand } from './commands/doctor.js';
 import { createCompletionCommand } from './commands/completion.js';
+import { createVariableCommand } from './commands/variable/index.js';
+import { createAuditCommand } from './commands/audit.js';
+import { createUserCommand } from './commands/user/index.js';
+import { createProjectCommand } from './commands/project/index.js';
+import { createSourceControlCommand } from './commands/source-control/index.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -50,6 +55,11 @@ program.addCommand(createTagNoun());
 program.addCommand(createAuthCommand());
 program.addCommand(createConfigCommand());
 program.addCommand(createProfileCommand());
+program.addCommand(createVariableCommand());
+program.addCommand(createUserCommand());
+program.addCommand(createProjectCommand());
+program.addCommand(createSourceControlCommand());
+program.addCommand(createAuditCommand());
 program.addCommand(createDoctorCommand());
 program.addCommand(createCompletionCommand());
 

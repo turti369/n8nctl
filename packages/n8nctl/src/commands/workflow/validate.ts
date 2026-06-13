@@ -5,7 +5,9 @@ import { validate as runValidate } from '@trngthnh369/n8n-workflow-validator';
 import { withAction } from '../../lib/runtime.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
+import { normalizeWorkflow } from '../../lib/normalize.js';
 import type { Factory } from '../../factory.js';
+import type { Workflow } from '../../types/n8n.js';
 
 interface ValidateOpts {
   strict?: boolean;
@@ -15,6 +17,7 @@ interface ValidateOpts {
    * before dispatching to the subcommand (verified on commander 12.1).
    */
   policy?: string;
+  fix?: boolean;
 }
 
 const PROFILES = ['dev', 'ci', 'strict'] as const;
@@ -35,6 +38,22 @@ export async function validateHandler(
     wf = JSON.parse(raw);
   } catch (e) {
     throw new ValidationError(`Invalid JSON: ${(e as Error).message}`);
+  }
+
+  // --fix: apply ONLY the mechanical normalize-class fixes (deterministic
+  // node ids → E071, execution-log settings → E070) and write back, then
+  // validate the fixed document. Semantic issues stay the n8n-fix skill's job.
+  if (opts.fix && !factory.flags.dryRun) {
+    const { workflow, changes } = normalizeWorkflow(wf as Workflow);
+    if (changes.length > 0) {
+      await fs.writeFile(absPath, JSON.stringify(workflow, null, 2) + '\n', 'utf8');
+      factory.io.stderr.write(
+        `${c.green('✓')} --fix applied ${changes.length} normalize change(s) to ${path.basename(absPath)}\n`,
+      );
+      wf = workflow;
+    } else {
+      factory.io.stderr.write(`${c.dim('→')} --fix: nothing mechanically fixable\n`);
+    }
   }
 
   if (opts.policy && !PROFILES.includes(opts.policy as (typeof PROFILES)[number])) {
@@ -89,5 +108,6 @@ export function createValidateCommand(): Command {
       'Severity policy: dev (CRITICAL blocks) | ci (CRITICAL+HIGH, default) | strict (+MEDIUM). ' +
         'Named --policy because --profile is the global auth-profile flag.',
     )
+    .option('--fix', 'Apply mechanical normalize fixes (node ids, log settings) in place, then validate')
     .action(withAction<ValidateOpts>(validateHandler));
 }
