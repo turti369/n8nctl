@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-06-13 (Phase 4: stabilization)
+
+The lifecycle is complete (build → validate → diff → backup → deploy →
+activate → execute → verify → debug → rollback → promote → monitor +
+governance) and the agent-facing contracts are frozen under semver.
+
+### Fixed
+
+- **Named `--profile` is now self-contained** (found via live cross-instance
+  promotion): with `N8N_HOST` exported in the shell, commander bound it to
+  `--host`, so `--profile docker-target` sent the docker key to the prod host →
+  401. Now an ambient env `N8N_HOST`/`N8N_API_KEY` does not override an
+  explicitly-chosen profile's host/key; only an explicit `--host`/`--api-key`
+  CLI flag does (`runtime.ts applyProfileHostPrecedence`, regression-tested).
+
+### Added
+
+- **`docs/CONTRACTS.md`** — the frozen 1.0 contracts (exit codes, output
+  selection, NDJSON events, 4-field write payload, redaction, profile
+  precedence, subcommand flag naming, destructive-op gates).
+- **`docs/PIPELINE_DECISION.md`** — documented NO-GO on a `pipeline` umbrella
+  command for 1.0 (the `n8n-pipeline` skill remains the judgment-bearing
+  orchestrator; the pure `lib/lifecycle/*` layer keeps a future thin sequencer
+  cheap if a Claude-free CI consumer appears).
+
+### Notes
+
+- **`workflow promote` live-validated cross-instance** against a throwaway
+  Docker n8n 1.122.5 (the Phase-3 1.0 gate): a 39-node production workflow
+  promoted dev→prod (create), re-promoted (idempotent update by name), and
+  credential auto-unique matching resolved against the target's real
+  credentials. The Docker fixture was torn down; no persistent test profile or
+  secret remains.
+- **Skills migrated** off the retired `_pipeline/test-gate.js`:
+  `n8n-test`/`n8n-deploy`/`n8n-fix`/`n8n-pipeline` now call `workflow verify`
+  (exit 6 contract); `n8n-rollback` reduced to a confirm-gate + one
+  `workflow rollback` call.
+- Per-project ad-hoc curl debug scripts under `D:/Projects/work/*/scripts/`
+  are intentionally left as-is (project-local scratch, not the shared
+  pipeline); the shared gate script WAS migrated.
+
 ## [0.9.0] — 2026-06-13 (Phase 3: cross-instance promotion)
 
 Promotes a workflow from one instance to another (dev → prod) with safe
