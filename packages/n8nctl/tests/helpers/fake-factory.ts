@@ -32,6 +32,8 @@ export interface FakeFactory {
   apiMock: MockAdapter;
   /** Mock the webhook HTTP layer (trigger-webhook command). */
   webhookMock: MockAdapter;
+  /** Mock the cross-profile target client (promote command). */
+  targetMock: () => MockAdapter;
   /** Mock the internal /rest session HTTP layer (lazily created on first sessionClient()). */
   sessionMock: () => MockAdapter;
   stdout: () => string;
@@ -112,6 +114,23 @@ export function makeFakeFactory(flags: Partial<GlobalFlags> = {}): FakeFactory {
     return sessionClient;
   };
 
+  // Optional second client for cross-profile commands (promote). Lazily
+  // created; the test wires its mock via targetMock().
+  let targetClient: N8nClient | null = null;
+  let targetMockAdapter: MockAdapter | null = null;
+  const ensureTargetClient = (): N8nClient => {
+    if (!targetClient) {
+      targetClient = new N8nClient(
+        { ...TEST_AUTH, host: 'https://target.example.com', profileName: 'target' },
+        { baseBackoffMs: 1, timeout: 1000 },
+      );
+      targetMockAdapter = new MockAdapter(
+        (targetClient as unknown as { http: axios.AxiosInstance }).http,
+      );
+    }
+    return targetClient;
+  };
+
   const factory: Factory = {
     io,
     flags: flags as GlobalFlags,
@@ -119,12 +138,17 @@ export function makeFakeFactory(flags: Partial<GlobalFlags> = {}): FakeFactory {
     session: async () => TEST_SESSION,
     client: async () => client,
     sessionClient: async () => ensureSessionClient(),
+    clientForProfile: async () => ensureTargetClient(),
   };
 
   return {
     factory,
     apiMock,
     webhookMock,
+    targetMock: () => {
+      ensureTargetClient();
+      return targetMockAdapter as MockAdapter;
+    },
     sessionMock: () => {
       ensureSessionClient();
       return sessionMockAdapter as MockAdapter;

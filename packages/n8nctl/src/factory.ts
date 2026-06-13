@@ -21,6 +21,12 @@ export interface Factory {
   session: () => Promise<ResolvedSession>;
   /** Lazy session client for /rest endpoints the Public API can't reach. */
   sessionClient: () => Promise<N8nSessionClient>;
+  /**
+   * Build a Public-API client for a DIFFERENT named profile (for cross-
+   * instance commands like `workflow promote --to <profile>`). Resolves auth
+   * for that profile independently; honors --insecure/--timeout.
+   */
+  clientForProfile: (profile: string) => Promise<N8nClient>;
 }
 
 export function createFactory(flags: GlobalFlags): Factory {
@@ -71,6 +77,15 @@ export function createFactory(flags: GlobalFlags): Factory {
         });
       }
       return clientCache;
+    },
+    clientForProfile: async (profile: string) => {
+      const a = await resolveAuth({ profile });
+      const insecure = flags.insecure === true || a.insecure === true;
+      return new N8nClient(a, {
+        timeout: flags.timeout,
+        insecure,
+        onEvent: (e) => io.event(e.event, e.payload),
+      });
     },
     sessionClient: async () => {
       if (!sessionClientCache) {

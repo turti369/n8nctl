@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-06-13 (Phase 3: cross-instance promotion)
+
+Promotes a workflow from one instance to another (dev → prod) with safe
+credential remapping — the hardest item in the roadmap, because credential
+NAMES are not unique in n8n and a blind match can silently bind a production
+workflow to the wrong secret.
+
+### Added
+
+- **`workflow promote <id> --to <profile> [--from <profile>] [--map <file>]
+  [--allow-unmapped] [--out-dir <dir>] [--activate]`** — fetch from the source
+  profile, remap every credential reference to the TARGET instance, diff
+  against any same-name workflow there, then create-or-update (4-field
+  whitelist only).
+  - **Credential safety (plan dt-r1-06)**: auto-match by (type, name) ONLY when
+    exactly ONE target credential matches. **0 matches → blocks** (unless
+    `--allow-unmapped`, which keeps the source ref); **≥2 matches → ALWAYS
+    blocks** (ambiguous; `--allow-unmapped` does not cover it) — an explicit
+    `--map` entry is required. No silent mis-binding.
+  - **Map file** (`--map`): JSON array of `{sourceId | type+name, targetId,
+    targetName?}` — an explicit entry always wins.
+  - A **redacted mapping report** is printed before any write (never prints
+    secret values). `--out-dir` writes `promoted-workflow.json`,
+    `mapping-report.json`, and `target-diff.json` for harness-style gating.
+  - Target credentials are derived from the target instance's workflow nodes
+    (n8n's Public API has no GET /credentials list endpoint).
+- **`factory.clientForProfile(profile)`** — build a Public-API client for a
+  second named profile, enabling cross-instance commands.
+
+### Notes / testing
+
+- 18 unit + handler tests (credential matching matrix, map-file precedence,
+  create-vs-update, artifacts, dry-run, 4-field whitelist). Live-exercised the
+  full pipeline against production via a same-profile `--to ... --dry-run`
+  (clientForProfile + real credential derivation: 10 credential refs resolved
+  to real target ids, 0 unresolved, artifacts written, nothing mutated).
+- A second n8n instance for true dev→prod live promotion is a **1.0 gate**
+  (disposable Docker fixture) — 0.9.0 is mock + same-instance verified.
+
 ## [0.8.0] — 2026-06-12 (Phase 2: governance & API coverage)
 
 Reaches the rest of the Public-API surface (variables, audit, users, projects,

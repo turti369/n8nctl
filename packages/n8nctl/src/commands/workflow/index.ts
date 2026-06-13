@@ -23,6 +23,7 @@ import { createNormalizeCommand } from './normalize.js';
 import { createVerifyCommand } from './verify.js';
 import { createRollbackCommand } from './rollback.js';
 import { createScaffoldCommand } from './scaffold.js';
+import { createPromoteCommand } from './promote.js';
 
 export function createWorkflowCommand(): Command {
   const cmd = new Command('workflow').alias('wf').description('Manage n8n workflows');
@@ -47,6 +48,7 @@ export function createWorkflowCommand(): Command {
   cmd.addCommand(createVerifyCommand());
   cmd.addCommand(createRollbackCommand());
   cmd.addCommand(createScaffoldCommand());
+  cmd.addCommand(createPromoteCommand());
   cmd.addCommand(createExportAllCommand());
   cmd.addCommand(createImportCommand());
   cmd.addCommand(createWatchCommand());
