@@ -11,16 +11,16 @@
     "kubectl",
     "devops"
   ],
-  "author": "Trường Thịnh <it01@emallvietnam.vn> (https://github.com/trngthnh369)",
+  "author": "Trường Thịnh <it01@emallvietnam.vn> (https://github.com/turti369)",
   "license": "MIT",
-  "homepage": "https://github.com/trngthnh369/n8nctl/tree/main/packages/n8nctl#readme",
+  "homepage": "https://github.com/turti369/n8nctl/tree/main/packages/n8nctl#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/trngthnh369/n8nctl.git",
+    "url": "git+https://github.com/turti369/n8nctl.git",
     "directory": "packages/n8nctl"
   },
   "bugs": {
-    "url": "https://github.com/trngthnh369/n8nctl/issues"
+    "url": "https://github.com/turti369/n8nctl/issues"
   },
   "type": "module",
   "bin": {
