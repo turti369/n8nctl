@@ -62,6 +62,10 @@ n8nctl workflow trigger-webhook 42 --data '{"input":"test"}' --wait --timeout 60
 
 # 9. Debug khi lỗi
 n8nctl execution last-error --workflow 42 --summary
+
+# 10. Chuẩn bị n8n MCP cho Claude/Codex/Cursor
+n8nctl mcp info --json
+n8nctl mcp config --client codex --server-name n8n-prod --token-env N8N_MCP_TOKEN
 ```
 
 ## Tính năng nổi bật
@@ -104,6 +108,11 @@ n8nctl workflow list --template '{{#each this}}{{id}} {{name}}{{newline}}{{/each
 - `--insecure` flag (self-signed TLS dev)
 - File lock config (tránh race condition)
 - Typed exit codes: 0 OK / 1 API / 2 auth / 3 validation / 4 network / 5 internal
+
+**n8n MCP + official CLI alignment**:
+- `n8nctl mcp info` suy ra endpoint MCP mặc định `<host>/mcp-server/http`, nhắc tách riêng `N8N_API_KEY` và token MCP.
+- `n8nctl mcp config --client claude|cursor|codex|generic` sinh snippet streamable HTTP cho MCP client.
+- `n8nctl mcp compare` phân vai rõ: n8n MCP expose tools, official n8n CLI/API client bám Public API, còn n8nctl tập trung vào validation, packaging, promotion, rollback và guardrails cho agent.
 
 ## Exit codes (dùng trong scripts)
 

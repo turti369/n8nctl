@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`mcp info|config|compare`** — agent-facing helpers for n8n's official
+  instance-level MCP surface and official beta n8n CLI/API client:
+  - `mcp info` prints the derived MCP endpoint (`<host>/mcp-server/http`),
+    separate MCP token env, official MCP/CLI positioning, and production
+    guardrails without exposing `N8N_API_KEY`.
+  - `mcp config --client <claude|cursor|codex|generic>` emits a
+    streamable-HTTP MCP client snippet with a bearer-token placeholder.
+  - `mcp compare` clarifies the boundary: n8n MCP exposes tools, official
+    n8n CLI mirrors the public API, and n8nctl remains the validation,
+    packaging, promotion, rollback, and agent-safe delivery layer.
+
 ## [1.0.0] — 2026-06-13 (Phase 4: stabilization)
 
 The lifecycle is complete (build → validate → diff → backup → deploy →

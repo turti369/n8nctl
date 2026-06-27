@@ -18,6 +18,7 @@
 - Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal)
 - Retry with exponential backoff + `Retry-After` respect
 - Offline workflow validation via [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
+- n8n MCP helpers: derive `<host>/mcp-server/http`, generate streamable-HTTP client config, and compare official MCP/CLI/n8nctl responsibilities
 
 ## Install
 
@@ -45,11 +46,15 @@ n8nctl workflow create ./my-workflow.json
 n8nctl workflow activate 58
 
 # 5. Trigger execution
-n8nctl workflow execute 58 --data '{"input": "value"}'
+n8nctl workflow trigger-webhook 58 --data '{"input": "value"}' --wait
 
 # 6. Inspect last execution
 n8nctl execution list --workflow 58 --limit 1
 n8nctl execution get <execution-id> --logs
+
+# 7. Prepare n8n instance MCP for an agent client
+n8nctl mcp info --json
+n8nctl mcp config --client claude --server-name n8n-prod --token-env N8N_MCP_TOKEN
 ```
 
 ## Command reference
@@ -65,7 +70,8 @@ See [the umbrella README](../../README.md) for the full monorepo context.
 | `workflow update <id> <file>` | Update from JSON file |
 | `workflow activate <id>` | Activate workflow |
 | `workflow deactivate <id>` | Deactivate workflow |
-| `workflow execute <id> [--data <json>]` | Trigger execution |
+| `workflow trigger-webhook <id> [--data <json>] [--wait]` | Trigger webhook workflow |
+| `workflow run <id> [--wait]` | Execute manual/scheduled/sub-workflow via session auth |
 | `workflow backup <id> [-o <dir>]` | Backup to timestamped file |
 | `workflow delete <id> [--yes]` | Delete workflow |
 | `workflow validate <file> [--strict]` | Offline 6-layer validation |
@@ -105,6 +111,13 @@ See [the umbrella README](../../README.md) for the full monorepo context.
 | `profile add <name> --host <url>` | Add profile |
 | `profile switch <name>` | Set active profile |
 | `profile remove <name>` | Remove profile |
+
+### mcp
+| Command | Description |
+|---------|-------------|
+| `mcp info [--endpoint <url>] [--token-env <name>]` | Show the derived n8n MCP endpoint, official MCP/CLI positioning, and safety guardrails |
+| `mcp config --client <claude|cursor|codex|generic>` | Generate a streamable-HTTP MCP client config snippet without exposing `N8N_API_KEY` |
+| `mcp compare` | Compare official n8n MCP, official n8n CLI/API client, and n8nctl responsibilities |
 
 ## Auth resolution order
 
