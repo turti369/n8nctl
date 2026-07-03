@@ -35,32 +35,54 @@ export async function watchHandler(
     `${c.dim('→ watching executions')} (poll ${pollMs}ms, Ctrl+C to stop)\n`,
   );
 
-  // Prime: mark the current top-of-list as already seen so we only
-  // emit NEW executions going forward.
-  const prime = await client.get<PaginatedResponse<Execution>>('/executions', params);
-  for (const e of prime.data) seen.add(e.id);
-
   let stopped = false;
+  // Abort any in-flight poll on Ctrl+C so the command exits immediately instead
+  // of hanging until the 30s request timeout.
+  const controller = new AbortController();
   const stop = (): void => {
     stopped = true;
+    controller.abort();
     factory.io.stderr.write(`\n${c.dim('watch stopped')}\n`);
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
-  while (!stopped) {
-    try {
-      const resp = await client.get<PaginatedResponse<Execution>>('/executions', params);
-      for (const e of resp.data.slice().reverse()) {
-        if (seen.has(e.id)) continue;
-        seen.add(e.id);
-        emitRow(factory.io.stdout, e);
+  const pollExecutions = (): Promise<PaginatedResponse<Execution>> =>
+    client.request<PaginatedResponse<Execution>>({
+      method: 'GET',
+      url: '/executions',
+      params,
+      signal: controller.signal,
+    });
+
+  try {
+    // Prime: mark the current top-of-list as already seen so we only
+    // emit NEW executions going forward.
+    const prime = await pollExecutions();
+    for (const e of prime.data) seen.add(e.id);
+
+    while (!stopped) {
+      try {
+        const resp = await pollExecutions();
+        for (const e of resp.data.slice().reverse()) {
+          if (seen.has(e.id)) continue;
+          seen.add(e.id);
+          emitRow(factory.io.stdout, e);
+        }
+      } catch (err) {
+        if (stopped) break; // aborted by Ctrl+C — not a real error
+        factory.io.stderr.write(`${c.yellow('poll error')}: ${(err as Error).message}\n`);
       }
-    } catch (err) {
-      factory.io.stderr.write(`${c.yellow('poll error')}: ${(err as Error).message}\n`);
+      if (stopped) break;
+      await sleep(pollMs);
     }
-    if (stopped) break;
-    await sleep(pollMs);
+  } catch (err) {
+    // A real error (e.g. bad auth during the prime poll) still fails fast; an
+    // abort from Ctrl+C during the prime is a clean exit, not an error.
+    if (!stopped) throw err;
+  } finally {
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
   }
 }
 
