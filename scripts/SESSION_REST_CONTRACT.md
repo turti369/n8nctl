@@ -27,6 +27,19 @@
 - Wait: executionId IS queryable via Public API `GET /api/v1/executions/{id}` → reuse `waitForExecution(factory.client())`.
 - Exec mode: `executionMode=regular`, `isQueueModeEnabled=false` (single-main).
 
+## Endpoint contract matrix (extend before adding any /rest-dependent command)
+
+| Endpoint | Method | Auth | Body | Response (shape-guarded) | License | n8n tested | Notes |
+|---|---|---|---|---|---|---|---|
+| `/rest/login` | POST | none (mints cookie) | `{email, emailOrLdapLoginId, password}` | `set-cookie: n8n-auth`; `{data:{email,role}}` | — | 1.122.5 | 7d cookie, no CSRF |
+| `/rest/login` | GET | cookie | — | `{data:{email,role}}` | — | 1.122.5 | whoami; 401 ⇒ re-login |
+| `/rest/workflows/{id}` | GET | cookie | — | `{data:<workflow>}` or bare | — | 1.122.5 | shape-guarded via expectRestObject |
+| `/rest/workflows/{id}/run` | POST | cookie | `{workflowData, triggerToStartFrom?}` — **never `runData`** | `{data:{executionId?, waitingForWebhook?}}` | — | 1.122.5 | webhook ⇒ waitingForWebhook |
+| `/rest/executions/{id}` | GET | cookie | — | `{data:<execution>}` or bare | — | 1.122.5 | poll to terminal |
+| `/rest/executions/{id}/retry` | POST | cookie | `{loadWorkflow?: boolean}` — body OPTIONAL (omit ⇒ retry from saved exec data; `true` ⇒ reload saved workflow) | `{data:<new execution>}` or bare | — | **RE-VERIFY on n8npc before v1.0.1 ship (hard gate)** — source: n8n `execution.types.ts` `Retry` route | Public API v1 has NO retry endpoint; only /rest. Fixes the 404 bug (was wrongly `POST /api/v1/executions/{id}/retry`). |
+
+> **Rule (from plan-review):** every new `/rest` (and licensed Public-API) endpoint a command depends on gets a row here — auth mode, body, shape guard, license, n8n version tested — BEFORE implementation. The `execution retry` bug (a fabricated Public-API endpoint that only passed against a mock) is exactly what this matrix prevents.
+
 ---
 <details><summary>Original template (superseded by findings above)</summary>
 

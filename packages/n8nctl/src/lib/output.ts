@@ -2,6 +2,7 @@ import { table, type TableUserConfig } from 'table';
 import Handlebars from 'handlebars';
 import jq from 'node-jq';
 import { ValidationError } from './errors.js';
+import { scrubAnsi } from './util.js';
 import type { IoStreams } from './io.js';
 
 export interface OutputOptions {
@@ -9,6 +10,13 @@ export interface OutputOptions {
   jq?: string;
   template?: string;
   output?: string;
+  /**
+   * TTY default output format from config `settings.outputFormat`. An explicit
+   * --json/--jq/--template flag still wins; this only picks the default when
+   * stdout is a TTY. 'json' forces JSON even on a TTY; 'table' keeps the
+   * table view; 'auto'/undefined = existing behaviour (table if available).
+   */
+  outputFormat?: 'auto' | 'json' | 'table';
 }
 
 export interface PrintContext {
@@ -34,7 +42,9 @@ export async function printData(
     return;
   }
 
-  if (ctx.opts.json || !ctx.io.isTTY) {
+  // Non-TTY always JSON (contract §2). On a TTY, --json or settings.outputFormat
+  // === 'json' forces JSON; otherwise fall through to the table/JSON default.
+  if (ctx.opts.json || !ctx.io.isTTY || ctx.opts.outputFormat === 'json') {
     ctx.io.stdout.write(JSON.stringify(data, null, 2));
     ctx.io.stdout.write('\n');
     return;
@@ -50,7 +60,11 @@ export async function printData(
         joinBody: '─', joinLeft: '├', joinRight: '┤', joinJoin: '┼',
       },
     };
-    ctx.io.stdout.write(table([view.head, ...view.rows], config));
+    // Scrub ANSI/control chars from cell values — a remote workflow name could
+    // otherwise smuggle terminal escape sequences into a TTY (the JSON/NDJSON
+    // paths are already escaped by JSON.stringify).
+    const scrubRow = (row: string[]): string[] => row.map((cell) => scrubAnsi(String(cell)));
+    ctx.io.stdout.write(table([scrubRow(view.head), ...view.rows.map(scrubRow)], config));
     return;
   }
 

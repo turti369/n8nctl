@@ -9,13 +9,13 @@
 
 ## Tính năng
 
-- Quản lý workflow đầy đủ (list, get, create, update, activate, backup, execute, delete)
+- Quản lý workflow đầy đủ (list, get, create, update, activate, run, verify, promote, backup, rollback, delete)
 - Kiểm tra execution (list, get, retry, wait, last-error)
 - Auth phân lớp: `--api-key` → `$N8N_API_KEY` → OS keyring (keytar) → config file
 - **Multi-instance profiles** (dev/staging/prod) — switch bằng 1 lệnh
 - Output trio: `--json` / `--jq` / `--template` (giống `gh`)
 - TTY-aware: bảng đẹp khi ở terminal, JSON khi pipe
-- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal)
+- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal, 6 assertion-failed)
 - Retry + exponential backoff + tôn trọng `Retry-After` header
 - Validate workflow offline qua [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
 
@@ -135,6 +135,7 @@ n8nctl workflow list --template '{{#each this}}{{id}}  {{name}}{{newline}}{{/eac
 | 3 | Lỗi validation |
 | 4 | Lỗi network |
 | 5 | Lỗi nội bộ |
+| 6 | Assertion failed — lệnh chạy xong nhưng kỳ vọng không đạt (`workflow verify`, `--expect-status`) |
 
 ## Self-signed TLS
 
@@ -147,7 +148,7 @@ n8nctl --insecure workflow list
 # Vĩnh viễn per-profile
 n8nctl profile add dev --host https://dev.internal --insecure
 
-# Hoặc dùng env var Node native
+# Không khuyến nghị: env var Node native (tắt TLS cho TOÀN BỘ process, không chỉ n8nctl)
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 ```
 

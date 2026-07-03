@@ -133,7 +133,10 @@ export class N8nClient {
         timeout: opts.timeout,
       },
       'webhook',
-      this.retryConfig,
+      // Data-plane: the target workflow can return 429/5xx AFTER running its
+      // side effects, so no HTTP-status retry — only connection-never-established
+      // network errors are retried.
+      { ...this.retryConfig, dataPlane: true },
     );
   }
 

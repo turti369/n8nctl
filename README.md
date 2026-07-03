@@ -7,7 +7,7 @@ Workspace containing two npm packages for operating n8n instances from the comma
 | Package | Purpose | npm |
 |---------|---------|-----|
 | [`@trngthnh369/n8nctl`](./packages/n8nctl) | CLI for managing n8n workflows via REST API | [![npm](https://img.shields.io/npm/v/@trngthnh369/n8nctl.svg)](https://www.npmjs.com/package/@trngthnh369/n8nctl) |
-| [`@trngthnh369/n8n-workflow-validator`](./packages/n8n-workflow-validator) | Offline n8n workflow JSON validator (6-layer checks) | [![npm](https://img.shields.io/npm/v/@trngthnh369/n8n-workflow-validator.svg)](https://www.npmjs.com/package/@trngthnh369/n8n-workflow-validator) |
+| [`@trngthnh369/n8n-workflow-validator`](./packages/n8n-workflow-validator) | Offline n8n workflow JSON validator (7-layer checks) | [![npm](https://img.shields.io/npm/v/@trngthnh369/n8n-workflow-validator.svg)](https://www.npmjs.com/package/@trngthnh369/n8n-workflow-validator) |
 
 ## Install
 
@@ -31,7 +31,7 @@ n8nctl workflow backup 42 -o ./backups/
 ## Development
 
 ```bash
-git clone https://github.com/trngthnh369/n8nctl.git
+git clone https://github.com/turti369/n8nctl.git
 cd n8nctl
 npm install                         # installs workspace deps
 npm run build                       # builds all packages
