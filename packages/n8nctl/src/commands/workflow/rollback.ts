@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import inquirer from 'inquirer';
+import { confirmPrompt } from '../../lib/prompt.js';
 import { withAction } from '../../lib/runtime.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
@@ -96,14 +96,9 @@ export async function rollbackHandler(
         `Target: ${target.file}`,
       );
     }
-    const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: `Restore workflow ${id} ("${current.name}") from ${path.basename(target.file)}?`,
-        default: false,
-      },
-    ]);
+    const confirm = await confirmPrompt(
+      `Restore workflow ${id} ("${current.name}") from ${path.basename(target.file)}?`,
+    );
     if (!confirm) {
       factory.io.stderr.write(`${c.yellow('cancelled')} — snapshot kept at ${snapshotPath}\n`);
       return;
