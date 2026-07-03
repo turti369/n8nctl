@@ -18,3 +18,6 @@ Thumbs.db
 .n8n-session.env
 .n8n-cookie.json
 _release/
+
+# Claude Code task-tracker
+.claude/

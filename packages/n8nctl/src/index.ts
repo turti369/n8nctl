@@ -16,6 +16,7 @@ import { createAuditCommand } from './commands/audit.js';
 import { createUserCommand } from './commands/user/index.js';
 import { createProjectCommand } from './commands/project/index.js';
 import { createSourceControlCommand } from './commands/source-control/index.js';
+import { createNodeCommand } from './commands/node/index.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -60,6 +61,7 @@ program.addCommand(createVariableCommand());
 program.addCommand(createUserCommand());
 program.addCommand(createProjectCommand());
 program.addCommand(createSourceControlCommand());
+program.addCommand(createNodeCommand());
 program.addCommand(createAuditCommand());
 program.addCommand(createDoctorCommand());
 program.addCommand(createCompletionCommand());

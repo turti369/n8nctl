@@ -146,6 +146,17 @@ export class N8nSessionClient {
     return r.data ?? {};
   }
 
+  /**
+   * GET a root-level static asset OUTSIDE `/rest` (e.g. `/types/nodes.json`,
+   * the editor's node catalog) with the session cookie. The absolute URL
+   * bypasses the `/rest` baseURL; the api-key client 401s on this path because
+   * it is served behind editor-session auth, not the Public API.
+   */
+  async getRootJson<T>(path: string): Promise<T> {
+    await this.ensureSession();
+    return this.req<T>({ method: 'GET', url: `${this.host}${path}` });
+  }
+
   async getWorkflowRest(id: string): Promise<Workflow> {
     const r = await this.req<{ data?: Workflow }>({
       method: 'GET',

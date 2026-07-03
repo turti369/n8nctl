@@ -59,3 +59,12 @@ dispatch, so the global always wins): `validate --policy` (not `--profile`),
 `rollback`, `source-control pull`, `delete` require confirmation; non-TTY needs
 `--yes` (they fail CLOSED otherwise). `--dry-run` previews every destructive op
 with zero side effects (no snapshot, no write).
+
+## 9. `node` verbs — live catalog (additive, 1.1.0)
+
+`node list|describe|search` read `GET <host>/types/nodes.json` (the editor's
+node catalog) via **session-cookie auth** — the api-key client 401s on that
+path. The verbs are additive and their FLAGS are contract-stable; the catalog
+CONTENT/shape is owned by the instance (varies with n8n version + installed
+community nodes) and is explicitly NOT frozen. Output is cached 24h under the
+config dir; `--refresh` forces a refetch.
