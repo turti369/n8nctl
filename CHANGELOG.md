@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-07-03 (performance: agent-loop latency)
+
+Startup and cross-instance-scan performance, targeted at agents that invoke the
+CLI in a tight loop. No behaviour or contract changes.
+
+### Performance
+
+- **Lazy-load heavy formatter/prompt deps.** `table`, `handlebars`, `node-jq`
+  (which shells out to a `jq` binary) and `inquirer` were imported at module top
+  level, so every invocation — even `--version` — paid their load cost. They are
+  now dynamically imported only on the code path that needs them (a `--jq`,
+  `--template`, table-render, or interactive-prompt). Measured cold start of
+  `--version` dropped ~15–22% (median ~1185 → ~1001 ms; mean ~1295 → ~1013 ms on
+  the dev box). Bench harness added at `scripts/bench-startup.mjs`.
+- **`workflow promote` scans the target instance in a single pass.** Credential
+  derivation and the same-name lookup previously did TWO full `/workflows` list
+  scans plus a sequential detail GET per workflow. Now one list pass feeds a
+  bounded worker pool (concurrency 8) and both steps read from that in-memory
+  set — one list + N parallel detail fetches. Slowest command, biggest win on
+  large target instances.
+- **`workflow watch` exits immediately on Ctrl+C.** An in-flight poll is now
+  cancelled via `AbortController` instead of hanging up to the 30 s request
+  timeout before the loop notices SIGINT.
+
+### Internal
+
+- `renderTemplate` is now `async` (it dynamically imports Handlebars). Internal
+  helper; not part of the CLI contract.
+
 ## [1.1.0] — 2026-07-03 (live node catalog)
 
 ### Added

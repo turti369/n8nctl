@@ -1,9 +1,12 @@
-import { table, type TableUserConfig } from 'table';
-import Handlebars from 'handlebars';
-import jq from 'node-jq';
+import type { TableUserConfig } from 'table';
 import { ValidationError } from './errors.js';
 import { scrubAnsi } from './util.js';
 import type { IoStreams } from './io.js';
+
+// `table`, `handlebars`, and `node-jq` are heavy (node-jq shells out to a jq
+// binary) and only needed for specific output modes. They are lazy-imported at
+// point of use so a plain `n8nctl workflow list --json` (or `--version`) never
+// pays their load cost — meaningful for a CLI an agent invokes in a tight loop.
 
 export interface OutputOptions {
   json?: boolean;
@@ -30,6 +33,7 @@ export async function printData(
   tableView?: (d: unknown) => { head: string[]; rows: string[][] },
 ): Promise<void> {
   if (ctx.opts.jq) {
+    const jq = (await import('node-jq')).default;
     const result = await jq.run(ctx.opts.jq, JSON.stringify(data), { input: 'string', output: 'json' });
     ctx.io.stdout.write(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
     ctx.io.stdout.write('\n');
@@ -37,7 +41,7 @@ export async function printData(
   }
 
   if (ctx.opts.template) {
-    ctx.io.stdout.write(renderTemplate(ctx.opts.template, data));
+    ctx.io.stdout.write(await renderTemplate(ctx.opts.template, data));
     ctx.io.stdout.write('\n');
     return;
   }
@@ -51,6 +55,7 @@ export async function printData(
   }
 
   if (tableView) {
+    const { table } = await import('table');
     const view = tableView(data);
     const config: TableUserConfig = {
       border: {
@@ -87,7 +92,8 @@ export async function printData(
  *
  * Helpers exposed: `newline`, `json` (pretty-print a value).
  */
-export function renderTemplate(template: string, data: unknown): string {
+export async function renderTemplate(template: string, data: unknown): Promise<string> {
+  const Handlebars = (await import('handlebars')).default;
   const hb = Handlebars.create();
   hb.registerHelper('newline', () => '\n');
   hb.registerHelper('json', (value: unknown) => JSON.stringify(value, null, 2));
