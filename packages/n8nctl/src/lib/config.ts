@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import yaml from 'js-yaml';
@@ -83,6 +83,31 @@ export async function readConfig(): Promise<ConfigFile> {
       `Failed to read config at ${configPath}: ${(err as Error).message}`,
       'Check YAML syntax or delete the file to start fresh.',
     );
+  }
+}
+
+/**
+ * Synchronous config read for construction-time settings wiring (color +
+ * timeout defaults must be resolved before any async work / first output).
+ * Deliberately RESILIENT: a malformed config returns defaults rather than
+ * throwing, so a bad YAML file can never crash startup at exit 5 before the
+ * error path runs. The async `readConfig` still surfaces YAML errors on the
+ * auth path (exit 3). Only the `settings` block is consumed from this.
+ */
+export function readConfigSync(): ConfigFile {
+  const configPath = getConfigPath();
+  if (!existsSync(configPath)) return structuredClone(DEFAULT_CONFIG);
+  try {
+    const parsed = yaml.load(readFileSync(configPath, 'utf8')) as Partial<ConfigFile> | null;
+    if (!parsed || typeof parsed !== 'object') return structuredClone(DEFAULT_CONFIG);
+    return {
+      ...DEFAULT_CONFIG,
+      ...parsed,
+      profiles: parsed.profiles ?? {},
+      settings: { ...DEFAULT_CONFIG.settings, ...(parsed.settings ?? {}) },
+    };
+  } catch {
+    return structuredClone(DEFAULT_CONFIG);
   }
 }
 

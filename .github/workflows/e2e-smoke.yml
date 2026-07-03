@@ -1,0 +1,43 @@
+name: E2E Smoke (live n8n)
+
+# Minimal live end-to-end smoke against a real n8n container. NOT run per-PR
+# (it starts docker + is slower/flakier than unit tests) — trigger manually via
+# the Actions tab, or on a schedule. This is the net that catches the class of
+# bug unit mocks miss (e.g. the `execution retry` /rest endpoint).
+#
+# Phase 4 expands this into a full nightly matrix; Phase 1 ships the minimal
+# version so the /rest retry fix has an automated live check.
+
+on:
+  workflow_dispatch:
+    inputs:
+      n8n_image:
+        description: 'n8n docker image to test against'
+        type: string
+        default: 'n8nio/n8n:1.122.5'
+  schedule:
+    - cron: '0 3 * * 1' # Mondays 03:00 UTC — early drift signal, low cost
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run live smoke
+        env:
+          N8N_IMAGE: ${{ github.event.inputs.n8n_image || 'n8nio/n8n:1.122.5' }}
+        run: bash scripts/e2e/smoke.sh

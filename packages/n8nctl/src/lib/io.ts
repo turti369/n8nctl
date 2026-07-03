@@ -28,11 +28,26 @@ export interface IoStreams {
   event: (eventName: string, payload?: Record<string, unknown>, text?: string) => void;
 }
 
-export function createIoStreams(logFormatOverride?: LogFormat): IoStreams {
+export type ColorSetting = 'auto' | 'always' | 'never';
+
+export function createIoStreams(
+  logFormatOverride?: LogFormat,
+  colorSetting?: ColorSetting,
+): IoStreams {
   const stdoutTTY = Boolean(process.stdout.isTTY);
   const noColor = 'NO_COLOR' in process.env || process.env.NO_COLOR === '1';
   const forceColor = process.env.FORCE_COLOR === '1' || process.env.FORCE_COLOR === 'true';
-  const isColorEnabled = forceColor || (stdoutTTY && !noColor);
+  // Precedence (contract §6): NO_COLOR/FORCE_COLOR env > config settings.color >
+  // TTY auto-detect. NO_COLOR is a hard override-off; FORCE_COLOR override-on.
+  const isColorEnabled = noColor
+    ? false
+    : forceColor
+      ? true
+      : colorSetting === 'always'
+        ? true
+        : colorSetting === 'never'
+          ? false
+          : stdoutTTY;
 
   if (!isColorEnabled) {
     chalk.level = 0;

@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-07-02 (correctness & release integrity hotfix)
+
+Bug-fix release. Reviewed via a 3-reviewer plan-review bus; the retry change is
+a deliberate **behaviour change** shipped under a patch because the old
+behaviour could duplicate a resource.
+
+### Fixed
+
+- **`execution retry` hit a non-existent endpoint.** It called
+  `POST /api/v1/executions/{id}/retry` on the Public API, which has no retry
+  endpoint — it 404'd on real instances and only passed against a mock. Retry
+  now goes through the internal `/rest/executions/{id}/retry` endpoint via the
+  session client (`n8nctl auth login --session` required), with an optional
+  `--load-workflow` flag. Contract pinned in `scripts/SESSION_REST_CONTRACT.md`.
+- **Commander parse errors now exit 3 (ValidationError), not 1 or 5.** A bad or
+  unknown option/command previously exited 1 (colliding with `ApiError`) via
+  Commander's own `process.exit`. `exitOverride` is now applied across the whole
+  command tree and mapped through the frozen exit-code contract (`--help` /
+  `--version` still exit 0). Spawn-level tested.
+- **`config.settings.{timeout,color,outputFormat}` were write-only dead config.**
+  They had a full get/set UI but nothing read them. Now wired with correct
+  precedence: `--timeout` flag > `settings.timeout` > 30000; `NO_COLOR`/
+  `FORCE_COLOR` > `settings.color` > TTY; `settings.outputFormat` sets the TTY
+  default (an explicit `--json`/`--jq`/`--template` still wins).
+- **`auth status` and `config list` now honour `--json`** (and emit JSON when
+  piped), per contract §2 "every read command".
+- **Table cell values are ANSI/control-char scrubbed** — a remote workflow name
+  can no longer smuggle terminal escape sequences into a TTY via `workflow list`.
+- **Release CI could not publish 1.0.0.** The version gate required the tag to
+  equal *both* the CLI and validator versions, but they version independently
+  (CLI 1.0.0 / validator 0.6.0). The gate now checks the CLI version for `vX.Y.Z`
+  tags and adds a separate `validator-vX.Y.Z` trigger; publishes skip a version
+  already on the registry (verifying `gitHead` matches the current commit to
+  avoid hiding a bad/partial release), and a `workflow_dispatch` dry-run runs
+  build + tests + `npm publish --dry-run` without publishing.
+
+### Changed
+
+- **Retry is now method-aware (behaviour change).** Idempotent methods
+  (GET/HEAD/PUT/DELETE) still retry all transient HTTP (429/502/503/504) and
+  network errors. Non-idempotent writes (POST/PATCH) retry **only** when the
+  server provably did not process the request — HTTP 429 and
+  connection-never-established network errors (ECONNREFUSED/ENETUNREACH/EAI_AGAIN)
+  — so an ambiguous 502/504/ECONNRESET/ETIMEDOUT after a committed write no
+  longer risks a duplicate resource. Webhook requests (data-plane) never retry on
+  an HTTP status at all, since the target workflow may have already run. A
+  transient network failure on a write may now surface as an error instead of
+  silently self-healing — this is intended.
+
+### Added
+
+- **`scripts/e2e/smoke.sh` + `e2e-smoke.yml` workflow** — a minimal live
+  end-to-end smoke against a real n8n container (owner bootstrap → API key →
+  create → run → **execution retry** → cleanup), run on demand / weekly. This is
+  the automated net that catches the class of bug the `execution retry` fix
+  addresses; unit mocks alone can't.
+- **Endpoint contract matrix** in `scripts/SESSION_REST_CONTRACT.md` — every
+  `/rest`-dependent command must document its endpoint/auth/body/shape before
+  implementation.
+
+### Docs
+
+- README: removed the phantom `workflow execute` command (real verbs are
+  `workflow run` / `workflow trigger-webhook`), added exit code 6 to the table,
+  replaced the `NODE_TLS_REJECT_UNAUTHORIZED=0` recommendation with the scoped
+  `--insecure` flag, fixed "6-layer" → "7-layer", and corrected the clone URL to
+  the `turti369` org.
+
 ## [1.0.0] — 2026-06-13 (Phase 4: stabilization)
 
 The lifecycle is complete (build → validate → diff → backup → deploy →

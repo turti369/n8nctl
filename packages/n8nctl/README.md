@@ -9,14 +9,15 @@
 
 ## Features
 
-- Full workflow CRUD (`list`, `get`, `create`, `update`, `activate`, `backup`, `execute`, `delete`)
+- Full workflow lifecycle (`list`, `get`, `create`, `update`, `activate`, `run`, `verify`, `promote`, `backup`, `rollback`, `delete`)
+- Trigger workflows: `workflow run` (headless via internal /rest) and `workflow trigger-webhook`
 - Execution inspection (`execution list/get/retry`) with logs
 - Layered auth: `--api-key` → `$N8N_API_KEY` → OS keyring (keytar) → config file
 - **Multi-instance profiles** (dev/staging/prod) — switch with one command
 - Universal `--json` / `--jq` / `--template` output trio (gh-style)
 - TTY-aware: pretty table in terminal, JSON when piped
-- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal)
-- Retry with exponential backoff + `Retry-After` respect
+- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal, 6 assertion-failed)
+- Method-aware retry with exponential backoff + `Retry-After` respect (writes never double-fire)
 - Offline workflow validation via [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
 
 ## Install
@@ -45,7 +46,11 @@ n8nctl workflow create ./my-workflow.json
 n8nctl workflow activate 58
 
 # 5. Trigger execution
-n8nctl workflow execute 58 --data '{"input": "value"}'
+#    - a webhook workflow: POST to its webhook URL
+n8nctl workflow trigger-webhook 58 --data '{"input": "value"}'
+#    - a manual/scheduled/sub-workflow: run headless via internal /rest (needs session login)
+n8nctl auth login --session --email you@example.com
+n8nctl workflow run 58 --wait
 
 # 6. Inspect last execution
 n8nctl execution list --workflow 58 --limit 1
@@ -65,17 +70,23 @@ See [the umbrella README](../../README.md) for the full monorepo context.
 | `workflow update <id> <file>` | Update from JSON file |
 | `workflow activate <id>` | Activate workflow |
 | `workflow deactivate <id>` | Deactivate workflow |
-| `workflow execute <id> [--data <json>]` | Trigger execution |
+| `workflow run <id> [--trigger <n>] [--wait]` | Execute headless via internal /rest (needs `auth login --session`) |
+| `workflow trigger-webhook <id> [--data <json>]` | POST to a workflow's webhook URL |
+| `workflow verify <id> [--expect <file>]` | Gate an execution against expectations (exit 6 on failed assertion) |
 | `workflow backup <id> [-o <dir>]` | Backup to timestamped file |
 | `workflow delete <id> [--yes]` | Delete workflow |
-| `workflow validate <file> [--strict]` | Offline 6-layer validation |
+| `workflow validate <file> [--strict]` | Offline 7-layer validation |
+
+> This table covers the common verbs. Run `n8nctl workflow --help` for the full
+> lifecycle set (`normalize`, `scaffold`, `diff`, `restore`, `rollback`,
+> `promote`, `export-all`, `import`, `watch`, `schema`, `refresh`, `status`, `tag`).
 
 ### execution
 | Command | Description |
 |---------|-------------|
 | `execution list [--workflow <id>] [--limit <n>]` | List executions |
 | `execution get <id> [--logs]` | Get execution details |
-| `execution retry <id>` | Retry failed execution |
+| `execution retry <id>` | Retry a failed execution (internal /rest — needs `auth login --session`) |
 
 ### credential
 | Command | Description |
@@ -142,19 +153,24 @@ n8nctl workflow list --template '{{#each this}}{{id}}  {{name}}{{newline}}{{/eac
 | 0 | Success |
 | 1 | API error (4xx/5xx from n8n) |
 | 2 | Auth error |
-| 3 | Validation error |
+| 3 | Validation error (incl. bad CLI arguments / unknown commands) |
 | 4 | Network error |
 | 5 | Internal error |
+| 6 | Assertion failed — the command ran but a stated expectation failed (`workflow verify`, `--expect-status`). Distinct from infra errors so agents can tell "broken pipeline" from "failed assertion". |
 
 ## Self-signed TLS
 
-For development instances with self-signed certificates, either set:
+For development instances with self-signed certificates, use the scoped
+`--insecure` flag (or per-profile `insecure: true`), which disables TLS
+verification for n8nctl's requests only and warns when active:
 
 ```bash
-export NODE_TLS_REJECT_UNAUTHORIZED=0
+n8nctl --insecure workflow list
+n8nctl profile add dev --host https://n8n-dev.local --insecure
 ```
 
-or (coming in v0.2) use `--insecure` flag / per-profile `insecure: true`.
+Prefer this over `NODE_TLS_REJECT_UNAUTHORIZED=0`, which disables TLS
+verification for the entire Node process.
 
 ## License
 

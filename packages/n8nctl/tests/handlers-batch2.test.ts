@@ -420,11 +420,25 @@ describe('execution handlers', () => {
     expect(env.stdout()).toContain('"id": "e1"');
   });
 
-  it('retry POSTs and prints the new execution id', async () => {
+  it('retry POSTs to the internal /rest endpoint and prints the new execution id', async () => {
     const env = makeFakeFactory();
-    env.apiMock.onPost('/executions/e1/retry').reply(200, { id: 'e2' });
+    env.sessionMock().onPost('/executions/e1/retry').reply(200, { data: { id: 'e2', status: 'running' } });
     await retryHandler(env.factory, {}, ['e1']);
     expect(env.stdout()).toContain('e2');
+    // emits the mutation event on the NDJSON stream
+    expect(env.events.some((e) => e.event === 'execution-retried')).toBe(true);
+  });
+
+  it('retry --load-workflow sends loadWorkflow:true in the /rest body', async () => {
+    const env = makeFakeFactory();
+    let body: Record<string, unknown> | undefined;
+    env.sessionMock().onPost('/executions/e1/retry').reply((cfg) => {
+      body = JSON.parse(cfg.data as string) as Record<string, unknown>;
+      return [200, { data: { id: 'e3' } }];
+    });
+    await retryHandler(env.factory, { loadWorkflow: true }, ['e1']);
+    expect(body?.loadWorkflow).toBe(true);
+    expect(env.stdout()).toContain('e3');
   });
 
   it('last-error reports clean when no failed executions', async () => {

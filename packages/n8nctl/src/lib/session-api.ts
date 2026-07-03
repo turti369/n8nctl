@@ -197,6 +197,23 @@ export class N8nSessionClient {
     return expectRestObject<ExecutionState>(r?.data ?? r, `execution ${execId}`);
   }
 
+  /**
+   * Retry a (usually failed) execution via the internal `/rest` endpoint the UI
+   * "Retry" button hits. The Public API v1 has NO execution-retry endpoint —
+   * only /rest does. Body `{ loadWorkflow }` is OPTIONAL: omitted → retry with
+   * the execution's saved workflow data; `true` → reload the current saved
+   * workflow. Returns the new execution object.
+   * Contract pinned in scripts/SESSION_REST_CONTRACT.md.
+   */
+  async retryExecution(execId: string, loadWorkflow = false): Promise<ExecutionState> {
+    const r = await this.req<{ data?: ExecutionState }>({
+      method: 'POST',
+      url: `/executions/${encodeURIComponent(execId)}/retry`,
+      data: { loadWorkflow },
+    });
+    return expectRestObject<ExecutionState>(r?.data ?? r, `retry of execution ${execId}`);
+  }
+
   /** Poll /rest/executions/{id} to a terminal state (robust vs saveManualExecutions). */
   async waitExecution(execId: string, opts: { timeoutMs: number; pollMs?: number }): Promise<ExecutionState> {
     const poll = opts.pollMs ?? 2000;
