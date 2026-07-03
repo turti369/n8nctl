@@ -37,8 +37,8 @@ behaviour could duplicate a resource.
   equal *both* the CLI and validator versions, but they version independently
   (CLI 1.0.0 / validator 0.6.0). The gate now checks the CLI version for `vX.Y.Z`
   tags and adds a separate `validator-vX.Y.Z` trigger; publishes skip a version
-  already on the registry (verifying `gitHead` matches the current commit to
-  avoid hiding a bad/partial release), and a `workflow_dispatch` dry-run runs
+  already on the registry (npm versions are immutable, so this also makes reruns
+  after a partial failure idempotent), and a `workflow_dispatch` dry-run runs
   build + tests + `npm publish --dry-run` without publishing.
 
 ### Changed

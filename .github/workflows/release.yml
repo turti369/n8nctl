@@ -114,25 +114,20 @@ jobs:
         run: |
           set -euo pipefail
           # Publish a package only if its exact version is not already on the
-          # registry. If it IS present, verify it was built from THIS commit
-          # (gitHead) — never silently green-light a version whose registry
-          # artifact came from a different commit (partial/bad release).
+          # registry. npm versions are IMMUTABLE — you cannot republish over an
+          # existing version — so "already present" always means "nothing to do"
+          # for that package (this also makes reruns after a partial failure
+          # idempotent: an already-published CLI is skipped while an unpublished
+          # validator still ships). A CLI release re-checks the validator so an
+          # advanced validator version rides along; an unchanged one skips.
           publish_if_new() {
             local pkg="$1" ver="$2"
-            local published head
-            published="$(npm view "$pkg@$ver" version 2>/dev/null || true)"
-            if [ -z "$published" ]; then
-              echo "Publishing $pkg@$ver"
-              npm publish -w "$pkg" --access public --provenance
+            if [ -n "$(npm view "$pkg@$ver" version 2>/dev/null || true)" ]; then
+              echo "::notice::$pkg@$ver already on registry — skipping (npm versions are immutable)"
               return
             fi
-            head="$(npm view "$pkg@$ver" gitHead 2>/dev/null || true)"
-            if [ -n "$head" ] && [ "$head" = "${GITHUB_SHA}" ]; then
-              echo "::notice::$pkg@$ver already published from this commit — skipping (idempotent rerun)"
-            else
-              echo "::error::$pkg@$ver already on registry but gitHead ('$head') != current ('${GITHUB_SHA}'). Bump the version before releasing."
-              exit 1
-            fi
+            echo "Publishing $pkg@$ver"
+            npm publish -w "$pkg" --access public --provenance
           }
 
           MODE="${{ steps.mode.outputs.mode }}"
