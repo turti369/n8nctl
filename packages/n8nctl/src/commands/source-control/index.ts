@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import inquirer from 'inquirer';
+import { confirmPrompt } from '../../lib/prompt.js';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
 import { ValidationError } from '../../lib/errors.js';
@@ -72,16 +72,11 @@ export async function sourceControlPullHandler(
         'A pull can overwrite many workflows at once. The pre-pull bundle is your rollback point.',
       );
     }
-    const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: opts.force
-          ? 'FORCE pull from the connected git branch? Local instance changes will be OVERWRITTEN.'
-          : 'Pull from the connected git branch? Instance state may change across many workflows.',
-        default: false,
-      },
-    ]);
+    const confirm = await confirmPrompt(
+      opts.force
+        ? 'FORCE pull from the connected git branch? Local instance changes will be OVERWRITTEN.'
+        : 'Pull from the connected git branch? Instance state may change across many workflows.',
+    );
     if (!confirm) {
       factory.io.stderr.write(`${c.yellow('cancelled')}${bundleDir ? ` — bundle kept at ${bundleDir}` : ''}\n`);
       return;

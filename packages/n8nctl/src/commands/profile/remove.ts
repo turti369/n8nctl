@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import inquirer from 'inquirer';
+import { confirmPrompt } from '../../lib/prompt.js';
 import { withAction } from '../../lib/runtime.js';
 import { readConfig, updateConfig } from '../../lib/config.js';
 import { purgeProfileSecrets } from '../../lib/keyring.js';
@@ -24,14 +24,7 @@ export async function profileRemoveHandler(
   }
 
   if (!opts.yes && factory.io.isTTY) {
-    const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: `Remove profile "${name}" (${profile.host})?`,
-        default: false,
-      },
-    ]);
+    const confirm = await confirmPrompt(`Remove profile "${name}" (${profile.host})?`);
     if (!confirm) {
       factory.io.stderr.write(`${c.yellow('cancelled')}\n`);
       return;

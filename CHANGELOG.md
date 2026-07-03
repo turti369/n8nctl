@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-07-04 (deploy-path validation, live catalog, coverage)
+
+### Added
+
+- **Deploy-path validation.** `workflow create/update/import/promote` now
+  validate the workflow before writing. **Warn-only by default** (issues print
+  to stderr, deploy still proceeds — additive, a previously-working deploy keeps
+  working); pass `--validate-policy <dev|ci|strict>` to make it a hard gate
+  (exit 3), or `--no-validate` to skip. Warn-default is deliberate: E050
+  (hardcoded-secret) is CRITICAL and blocks in every policy incl. `dev`, and its
+  generic pattern false-positives on benign live workflows — so blocking by
+  default would break working promotes/updates with no policy escape.
+- **`catalog sync | show | reset`.** `catalog sync` generates an offline
+  validator catalog from THIS instance's live node types
+  (`/types/nodes.json`, incl. community nodes) so `workflow validate` and the
+  deploy-path validation param-check against the ~400+ node types the instance
+  actually runs, not the 36-node bundled snapshot. Stored per profile with a
+  min-node-count sanity gate + atomic write; `N8N_VALIDATOR_CATALOG` overrides
+  the path; `catalog reset` reverts to the bundled catalog. Requires
+  `auth login --session` (the asset is behind editor auth). The validator itself
+  is unchanged — n8nctl passes the synced catalog via its existing
+  `options.catalog`.
+- **Missing Public-API coverage**: `execution delete`, `tag update`,
+  `tag delete`, `credential delete`, `credential transfer`, `workflow transfer`
+  (transfers are licensed: Projects — mapped to a clear hint on 403/404).
+- **Dynamic shell completion.** `completion <shell>` now walks the live
+  Commander tree, so every command/verb/alias is reflected automatically. The
+  previous static lists had drifted ~half a release behind the real surface
+  (missing `variable/user/project/source-control/audit/node/catalog` and half
+  the workflow verbs).
+
+### Performance
+
+- **inquirer fully lazy-loaded.** Phase 1.2.0 lazy-loaded inquirer in
+  `auth login`, but four confirm-gated commands (`workflow delete`,
+  `workflow rollback`, `profile remove`, `source-control pull`) still imported
+  it at module top level — keeping it on the startup path. All confirm prompts
+  now route through a shared lazy `confirmPrompt`, so inquirer no longer loads
+  for `--version` or any non-interactive command.
+
 ## [1.2.0] — 2026-07-03 (performance: agent-loop latency)
 
 Startup and cross-instance-scan performance, targeted at agents that invoke the

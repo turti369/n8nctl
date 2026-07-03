@@ -5,6 +5,7 @@ import { withAction } from '../../lib/runtime.js';
 import { ValidationError, ApiError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
+import { autoValidate, type AutoValidateOpts } from '../../lib/auto-validate.js';
 import { computeDiff } from './diff.js';
 import {
   planPromotion,
@@ -16,7 +17,7 @@ import type { Factory } from '../../factory.js';
 import type { N8nClient } from '../../lib/api.js';
 import type { Workflow } from '../../types/n8n.js';
 
-interface PromoteOpts {
+interface PromoteOpts extends AutoValidateOpts {
   to?: string;
   from?: string;
   map?: string;
@@ -140,6 +141,10 @@ export async function promoteHandler(
     );
   }
 
+  // Validate the remapped workflow before promoting. Warn-only by default
+  // (promote operates on already-live workflows); --validate-policy blocks.
+  autoValidate(factory, plan.workflow, opts);
+
   // 5. Diff against an existing same-name workflow on target (create or update).
   //    Served from the single pass above — no second scan.
   const existing = targetWorkflows.find((w) => w.name === source.name);
@@ -223,5 +228,7 @@ export function createPromoteCommand(): Command {
     .option('--allow-unmapped', 'proceed even if some credentials have NO target match (keeps source refs; ambiguous still blocks)')
     .option('--out-dir <dir>', 'write promoted JSON + mapping report + target diff as artifacts')
     .option('--activate', 'activate the workflow on the target after promotion')
+    .option('--no-validate', 'Skip pre-promote workflow validation')
+    .option('--validate-policy <p>', 'Block on validation issues per policy (dev|ci|strict). Default: warn only.')
     .action(withAction<PromoteOpts>(promoteHandler));
 }

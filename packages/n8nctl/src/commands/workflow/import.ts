@@ -6,10 +6,11 @@ import { ValidationError, ApiError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
 import { parsePositiveInt } from '../../lib/util.js';
+import { autoValidate, type AutoValidateOpts } from '../../lib/auto-validate.js';
 import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
-interface ImportOpts {
+interface ImportOpts extends AutoValidateOpts {
   force?: boolean;
   activate?: boolean;
   concurrency?: string;
@@ -70,6 +71,8 @@ export async function importHandler(
       const task = queue.shift();
       if (!task) return;
       try {
+        // Warn-only by default; --validate-policy blocks (fails this file only).
+        autoValidate(factory, task.workflow, opts);
         const body = stripReadOnlyFields(task.workflow);
         let result: Workflow;
         if (task.workflow.id) {
@@ -130,5 +133,7 @@ export function createImportCommand(): Command {
     .option('--force', 'Overwrite existing workflows (default: skip)')
     .option('--activate', 'Activate each imported workflow')
     .option('--concurrency <n>', 'Max parallel imports (default: 3)')
+    .option('--no-validate', 'Skip pre-deploy workflow validation')
+    .option('--validate-policy <p>', 'Block on validation issues per policy (dev|ci|strict). Default: warn only.')
     .action(withAction<ImportOpts>(importHandler));
 }
