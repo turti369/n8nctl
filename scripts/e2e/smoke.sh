@@ -154,7 +154,27 @@ NEW_EXEC="$(echo "$RETRY_OUT" | jq -r '.newExecutionId // empty')"
   || { echo "retry did not return a new execution id. Output: $RETRY_OUT"; exit 1; }
 echo "retried → new execution id: $NEW_EXEC"
 
+step "One-shot deploy of a PASSING workflow (workflow deploy → run → gate)"
+# The non-LLM consumer that justifies the deploy sequencer (PIPELINE_DECISION.md).
+DEPLOY_FILE="$(mktemp)"
+cat > "$DEPLOY_FILE" <<'JSON'
+{
+  "name": "n8nctl-smoke-deploy",
+  "nodes": [
+    { "id": "33333333-3333-4333-8333-333333333333", "name": "Manual Trigger", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 0], "parameters": {} },
+    { "id": "44444444-4444-4444-8444-444444444444", "name": "Set", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [260, 0], "parameters": { "assignments": { "assignments": [ { "id": "a1", "name": "ok", "value": true, "type": "boolean" } ] } } }
+  ],
+  "connections": { "Manual Trigger": { "main": [[{ "node": "Set", "type": "main", "index": 0 }]] } },
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "saveDataSuccessExecution": "all" }
+}
+JSON
+$CLI workflow deploy "$DEPLOY_FILE" --run --trigger "Manual Trigger" --expect-fields ok --json
+DEPLOY_ID="$($CLI workflow list --search n8nctl-smoke-deploy --json | jq -r '.[0].id // empty')"
+echo "deployed workflow id: ${DEPLOY_ID:-<none>}"
+
 step "Fetch execution + cleanup"
 $CLI execution get "$EXEC_ID" --json >/dev/null
 $CLI workflow delete "$WF_ID" --yes >/dev/null
-echo "deleted workflow $WF_ID"
+[ -n "$DEPLOY_ID" ] && $CLI workflow delete "$DEPLOY_ID" --yes >/dev/null || true
+rm -f "$DEPLOY_FILE"
+echo "deleted workflows $WF_ID ${DEPLOY_ID:-}"

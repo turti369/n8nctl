@@ -1,4 +1,21 @@
-# `pipeline` umbrella command — go/no-go (1.0.0)
+# `pipeline` / `workflow deploy` sequencer — decision log
+
+> **UPDATE (1.4.0, 2026-07-04): RE-OPENED and shipped as `workflow deploy`.**
+> The reopen condition below ("a genuinely Claude-free consumer") is now met: the
+> live e2e CI job (`scripts/e2e/smoke.sh` / `.github/workflows/e2e-smoke.yml`)
+> deploys a workflow with **no LLM in the loop**, and needs a single
+> non-interactive command rather than re-implementing the sequence in bash.
+> `workflow deploy` is that thin sequencer over the existing `lib/lifecycle/*`
+> primitives (normalize → validate → create-or-update → activate →
+> trigger-registration probe → run → verify gate), with unique-name safety,
+> transaction-log rollback (`--rollback-on-fail`), and exit-code contract
+> (3 validation/ambiguity, 6 gate/registration). The interactive `n8n-pipeline`
+> skill remains for judgment-bearing, human-in-the-loop deploys. This supersedes
+> the 1.0 NO-GO below.
+
+---
+
+# `pipeline` umbrella command — go/no-go (1.0.0, superseded)
 
 **Decision: NO-GO for 1.0. The primitives ship; the orchestrator stays a skill.**
 

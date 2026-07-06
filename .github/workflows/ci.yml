@@ -22,5 +22,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: Check command docs are not stale
+        # Only needs to run once — pick the fastest matrix leg.
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        run: node scripts/gen-command-docs.mjs --check
       - name: Check audit (production deps only)
         run: npm audit --omit=dev --audit-level=high

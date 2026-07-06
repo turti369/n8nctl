@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-07-04 (one-shot deploy sequencer + docs-as-code)
+
+### Added
+
+- **`workflow deploy <file>`** — the one-shot sequencer:
+  normalize → validate → **create-or-update** → activate → optional
+  trigger-registration probe → optional run + **verify gate**. Safety built in:
+  - **Unique-name matching** — deploy-by-name updates only when exactly one
+    workflow matches; zero → create (unless `--update-only`); **two or more →
+    exit 3** with candidate IDs (updating the wrong workflow is a data-loss
+    path). `--id`, `--create-only`, `--update-only` for explicit control.
+  - **Fail-closed validation** at `ci` by default (a new command, no
+    backward-compat concern); `--validate-policy` / `--no-validate` override.
+  - **Trigger-registration check** (`--verify-triggers`) probes the webhook
+    URL after activation and **exits 6** if it 404s despite `active=true` — the
+    self-hosted "active in DB but not registered in-process" trap. Opt-in
+    because probing fires the webhook once.
+  - **`--run` + verify gate** reuses the Cần+Đủ+Tốt gate (`--expect`,
+    `--expect-fields`, `--max-duration-ms`); gate failure → exit 6.
+  - **Transaction-log rollback** (`--rollback-on-fail`): a failed update
+    restores the pre-deploy body + active state; a failed create is deactivated
+    (or deleted with `--rollback-delete-created`).
+  - NDJSON events `workflow-deploy-started|step|finished|rolledback`, optional
+    `--out-dir` artifact.
+
+  This re-opens and supersedes the 1.0 `PIPELINE_DECISION.md` NO-GO: its reopen
+  condition ("a genuinely Claude-free consumer") is now met by the live e2e CI
+  job, which deploys with no LLM in the loop.
+
+- **`docs/COMMANDS.md` is generated from the Commander tree**
+  (`scripts/gen-command-docs.mjs`), and CI fails if it drifts (`--check`). The
+  command reference can no longer fall behind the code (the README tables had
+  drifted ~half a release before).
+
+- Live e2e smoke (`scripts/e2e/smoke.sh`) now exercises `workflow deploy`
+  end-to-end (deploy → run → gate) — the non-LLM consumer that justifies the
+  sequencer.
+
 ## [1.3.0] — 2026-07-04 (deploy-path validation, live catalog, coverage)
 
 ### Added
