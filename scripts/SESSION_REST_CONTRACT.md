@@ -40,6 +40,19 @@
 
 > **Rule (from plan-review):** every new `/rest` (and licensed Public-API) endpoint a command depends on gets a row here — auth mode, body, shape guard, license, n8n version tested — BEFORE implementation. The `execution retry` bug (a fabricated Public-API endpoint that only passed against a mock) is exactly what this matrix prevents.
 
+### Public-API governance endpoints (1.5.0 — per docs.n8n.io/api/api-reference; mock-tested, live-verify on a licensed instance before relying in prod)
+
+| Endpoint | Method | Auth | Body | Response | License | Notes |
+|---|---|---|---|---|---|---|
+| `/api/v1/users` | POST | API key (owner) | ARRAY `[{email, role?}]`, role ∈ `global:admin\|global:member` | array of `{user:{id,email,inviteAcceptUrl?},error?}` per entry | user mgmt | invite; partial failures per entry |
+| `/api/v1/users/{id}` | DELETE | API key (owner) | — | 204 | user mgmt | id or email |
+| `/api/v1/users/{id}/role` | PATCH | API key (owner) | `{newRoleName: 'global:admin'\|'global:member'}` | 200 | user mgmt | |
+| `/api/v1/projects` | POST | API key | `{name}` | `{id,name,type}` | **Projects (paid)** | rethrowWithLicenseHint |
+| `/api/v1/projects/{id}` | PUT | API key | `{name}` | 204/200 | Projects | rename |
+| `/api/v1/projects/{id}` | DELETE | API key | — | 204 | Projects | |
+| `/api/v1/projects/{id}/users` | POST | API key | `{relations:[{userId, role}]}`, role ∈ `project:admin\|project:editor\|project:viewer` | 201 | Projects | add members |
+| `/api/v1/projects/{id}/users/{userId}` | DELETE | API key | — | 204 | Projects | remove member |
+
 ---
 <details><summary>Original template (superseded by findings above)</summary>
 

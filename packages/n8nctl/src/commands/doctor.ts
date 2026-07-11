@@ -162,6 +162,117 @@ interface DoctorOpts {
   verbose?: boolean;
 }
 
+// ── Per-check functions (each returns its CheckResult(s); no I/O beyond HTTP) ──
+
+function checkNodeVersion(): CheckResult {
+  const nodeVersion = process.versions.node;
+  const major = Number(nodeVersion.split('.')[0]);
+  return {
+    name: 'Node.js version',
+    status: major >= 20 ? 'ok' : 'fail',
+    detail: `${nodeVersion} (required: >=20)`,
+  };
+}
+
+async function checkConfigFile(): Promise<CheckResult> {
+  try {
+    const cfg = await readConfig();
+    const profileCount = Object.keys(cfg.profiles).length;
+    return {
+      name: 'Config file',
+      status: 'ok',
+      detail: `${profileCount} profile(s), active: ${cfg.activeProfile ?? 'none'}`,
+    };
+  } catch (err) {
+    return { name: 'Config file', status: 'fail', detail: (err as Error).message };
+  }
+}
+
+async function checkKeyring(): Promise<CheckResult> {
+  const keyring = await isKeyringAvailable();
+  return {
+    name: 'OS keyring (keytar)',
+    status: keyring ? 'ok' : 'warn',
+    detail: keyring ? 'available' : 'unavailable — credentials fall back to plaintext config',
+    ...(keyring ? {} : { remediation: 'Install/enable the OS credential store, then re-run `n8nctl auth login`' }),
+  };
+}
+
+function checkEnvVars(): CheckResult {
+  const envSet = Boolean(process.env.N8N_API_KEY && process.env.N8N_HOST);
+  return {
+    name: 'Env vars (N8N_API_KEY + N8N_HOST)',
+    status: envSet ? 'ok' : 'warn',
+    detail: envSet ? 'set' : 'not set — using profile-based auth',
+    ...(envSet ? {} : { remediation: 'export N8N_HOST + N8N_API_KEY, or configure a profile: `n8nctl auth login`' }),
+  };
+}
+
+async function checkApiConnectivity(client: N8nClient): Promise<CheckResult> {
+  try {
+    await client.get('/workflows', { limit: 1 });
+    return {
+      name: 'API connectivity (GET /workflows)',
+      status: 'ok',
+      detail: 'reachable + authenticated',
+    };
+  } catch (err) {
+    return {
+      name: 'API connectivity',
+      status: 'fail',
+      detail: (err as Error).message,
+      remediation: 'Check N8N_HOST is reachable and the API key is valid: `n8nctl auth status`',
+    };
+  }
+}
+
+/** Read-permission probe on an endpoint; failure is a warn, not a fail. */
+async function checkReadPermission(
+  client: N8nClient,
+  endpoint: string,
+  label: string,
+): Promise<CheckResult> {
+  try {
+    await client.get(endpoint, { limit: 1 });
+    return { name: `${label} (GET ${endpoint})`, status: 'ok', detail: 'available' };
+  } catch (err) {
+    return { name: label, status: 'warn', detail: (err as Error).message };
+  }
+}
+
+/**
+ * License-feature probes (read-only): Variables and Projects are paid n8n
+ * features — agents need to know BEFORE invoking variable/project commands
+ * whether the instance supports them.
+ */
+async function checkLicenseFeatures(client: N8nClient): Promise<CheckResult[]> {
+  const out: CheckResult[] = [];
+  for (const [endpoint, label, command] of [
+    ['/variables', 'License: Variables API', 'n8nctl variable list'],
+    ['/projects', 'License: Projects API', 'n8nctl project list'],
+  ] as const) {
+    try {
+      await client.get(endpoint, { limit: 1 });
+      out.push({ name: label, status: 'ok', detail: `available (${command})` });
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      out.push({
+        name: label,
+        status: 'warn',
+        detail:
+          status === 403 || status === 404
+            ? `license-gated on this instance (HTTP ${status})`
+            : (err as Error).message,
+        remediation:
+          status === 403 || status === 404
+            ? 'Upgrade the n8n plan to use this feature; the CLI command will fail with the same hint'
+            : 'Transient error — re-run doctor',
+      });
+    }
+  }
+  return out;
+}
+
 export async function doctorHandler(
   factory: Factory,
   opts: DoctorOpts,
@@ -170,51 +281,11 @@ export async function doctorHandler(
   const results: CheckResult[] = [];
   const verbose: VerboseStats = {};
 
-  // Node version
-  const nodeVersion = process.versions.node;
-  const major = Number(nodeVersion.split('.')[0]);
-  results.push({
-    name: 'Node.js version',
-    status: major >= 20 ? 'ok' : 'fail',
-    detail: `${nodeVersion} (required: >=20)`,
-  });
+  results.push(checkNodeVersion());
+  results.push(await checkConfigFile());
+  results.push(await checkKeyring());
+  results.push(checkEnvVars());
 
-  // Config file
-  try {
-    const cfg = await readConfig();
-    const profileCount = Object.keys(cfg.profiles).length;
-    results.push({
-      name: 'Config file',
-      status: 'ok',
-      detail: `${profileCount} profile(s), active: ${cfg.activeProfile ?? 'none'}`,
-    });
-  } catch (err) {
-    results.push({
-      name: 'Config file',
-      status: 'fail',
-      detail: (err as Error).message,
-    });
-  }
-
-  // Keyring
-  const keyring = await isKeyringAvailable();
-  results.push({
-    name: 'OS keyring (keytar)',
-    status: keyring ? 'ok' : 'warn',
-    detail: keyring ? 'available' : 'unavailable — credentials fall back to plaintext config',
-    ...(keyring ? {} : { remediation: 'Install/enable the OS credential store, then re-run `n8nctl auth login`' }),
-  });
-
-  // Env vars
-  const envSet = Boolean(process.env.N8N_API_KEY && process.env.N8N_HOST);
-  results.push({
-    name: 'Env vars (N8N_API_KEY + N8N_HOST)',
-    status: envSet ? 'ok' : 'warn',
-    detail: envSet ? 'set' : 'not set — using profile-based auth',
-    ...(envSet ? {} : { remediation: 'export N8N_HOST + N8N_API_KEY, or configure a profile: `n8nctl auth login`' }),
-  });
-
-  // Auth resolution
   let authOk = false;
   try {
     const auth = await factory.auth();
@@ -225,101 +296,25 @@ export async function doctorHandler(
       detail: `profile "${auth.profileName}" via ${auth.source} → ${auth.host}`,
     });
 
-    // API reachability
     const client = await factory.client();
-    try {
-      await client.get('/workflows', { limit: 1 });
-      results.push({
-        name: 'API connectivity (GET /workflows)',
-        status: 'ok',
-        detail: 'reachable + authenticated',
-      });
-    } catch (err) {
-      results.push({
-        name: 'API connectivity',
-        status: 'fail',
-        detail: (err as Error).message,
-        remediation: 'Check N8N_HOST is reachable and the API key is valid: `n8nctl auth status`',
-      });
-    }
+    results.push(await checkApiConnectivity(client));
+    results.push(await checkReadPermission(client, '/tags', 'Tag permission'));
+    results.push(await checkReadPermission(client, '/executions', 'Execution permission'));
 
-    // Tags permission
-    try {
-      await client.get('/tags', { limit: 1 });
-      results.push({
-        name: 'Tag permission (GET /tags)',
-        status: 'ok',
-        detail: 'available',
-      });
-    } catch (err) {
-      results.push({
-        name: 'Tag permission',
-        status: 'warn',
-        detail: (err as Error).message,
-      });
-    }
-
-    // Executions permission
-    try {
-      await client.get('/executions', { limit: 1 });
-      results.push({
-        name: 'Execution permission (GET /executions)',
-        status: 'ok',
-        detail: 'available',
-      });
-    } catch (err) {
-      results.push({
-        name: 'Execution permission',
-        status: 'warn',
-        detail: (err as Error).message,
-      });
-    }
-
-    // Write + delete permission probe. Reuses a fixed-name probe tag so
-    // a key lacking DELETE scope can't accumulate garbage tags on every
-    // run (the pre-0.4.0 behaviour). See probeWritePermission.
+    // Write + delete permission probe. Reuses a fixed-name probe tag so a key
+    // lacking DELETE scope can't accumulate garbage tags on every run.
     const probe = await probeWritePermission(client);
     results.push(probe.write);
     if (probe.delete) results.push(probe.delete);
 
-    // License-feature probes (read-only): Variables and Projects are paid
-    // n8n features — agents need to know BEFORE invoking variable/project
-    // commands whether the instance supports them.
-    for (const [endpoint, label, command] of [
-      ['/variables', 'License: Variables API', 'n8nctl variable list'],
-      ['/projects', 'License: Projects API', 'n8nctl project list'],
-    ] as const) {
-      try {
-        await client.get(endpoint, { limit: 1 });
-        results.push({ name: label, status: 'ok', detail: `available (${command})` });
-      } catch (err) {
-        const status = (err as { status?: number }).status;
-        results.push({
-          name: label,
-          status: 'warn',
-          detail:
-            status === 403 || status === 404
-              ? `license-gated on this instance (HTTP ${status})`
-              : (err as Error).message,
-          remediation:
-            status === 403 || status === 404
-              ? 'Upgrade the n8n plan to use this feature; the CLI command will fail with the same hint'
-              : 'Transient error — re-run doctor',
-        });
-      }
-    }
+    results.push(...(await checkLicenseFeatures(client)));
 
-    // Verbose mode — gather server version, latency, throughput
     if (opts.verbose) {
       await collectVerboseStats(client, verbose);
     }
   } catch (err) {
     if (err instanceof AuthError) {
-      results.push({
-        name: 'Auth resolution',
-        status: 'fail',
-        detail: err.message,
-      });
+      results.push({ name: 'Auth resolution', status: 'fail', detail: err.message });
     } else {
       throw err;
     }

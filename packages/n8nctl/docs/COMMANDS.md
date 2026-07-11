@@ -242,12 +242,39 @@ Set the active profile
 
 ## project
 
-Inspect projects (licensed n8n feature, read-only)
+Manage projects (licensed n8n feature)
+
+### `project add-user <projectId> <userId>`
+
+Add a user to a project (licensed: Projects)
+
+  - `--role <role>` — project role (project:admin | project:editor | project:viewer)
+
+### `project create <name>`
+
+Create a project (licensed: Projects)
+
+### `project delete <id>`
+*aliases: rm*
+
+Delete a project (licensed: Projects)
+
+  - `-y, --yes` — Skip confirmation prompt
 
 ### `project list`
 *aliases: ls*
 
 List projects
+
+### `project remove-user <projectId> <userId>`
+
+Remove a user from a project (licensed: Projects)
+
+  - `-y, --yes` — Skip confirmation prompt
+
+### `project update <id> <name>`
+
+Rename a project (licensed: Projects)
 
 ## source-control (sc)
 
@@ -291,16 +318,33 @@ Rename a tag
 
 ## user
 
-Inspect instance users (read-only)
+Manage instance users (writes are licensed features)
+
+### `user delete <id>`
+*aliases: rm*
+
+Delete a user (licensed: user management)
+
+  - `-y, --yes` — Skip confirmation prompt
 
 ### `user get <id>`
 
 Get a user by id or email
 
+### `user invite <emails>`
+
+Invite one or more users by email (licensed: user management)
+
+  - `--role <role>` — global role for the invitees (global:admin | global:member)
+
 ### `user list`
 *aliases: ls*
 
 List users
+
+### `user role <id> <role>`
+
+Change a user's global role (licensed: user management)
 
 ## variable (var)
 
