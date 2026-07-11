@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-07-10 (governance coverage + test hardening)
+
+Phase 4 tail — the final roadmap items.
+
+### Added
+
+- **User governance** (licensed: user management): `user invite <emails...>
+  [--role global:admin|global:member]` (the invite endpoint takes an array and
+  reports per-entry success/failure — partial failures exit 1 with the
+  `inviteAcceptUrl` printed per invitee), `user delete <id>` (confirm-gated),
+  `user role <id> <global:admin|global:member>`.
+- **Project governance** (licensed: Projects): `project create|update|delete`
+  plus membership: `project add-user <projectId> <userId>
+  [--role project:admin|project:editor|project:viewer]` and
+  `project remove-user`. All licensed calls map 403/404 to the standard
+  license hint. Endpoint contracts added to the matrix in
+  `scripts/SESSION_REST_CONTRACT.md` (mock-tested; live-verify on a licensed
+  instance before relying on them in prod).
+
+### Changed
+
+- **CI now enforces coverage thresholds** (`npm run test:coverage`, single
+  matrix leg) — the thresholds in `vitest.config.ts` existed since 1.0 but were
+  never run in CI. Ratcheted to just under current actuals
+  (statements 75, branches 70, functions 80, lines 75 vs actual 79/75/88/79)
+  so a coverage regression fails the build while normal churn passes.
+- **`doctor` internals split into per-check functions** (node/config/keyring/
+  env/connectivity/read-permission/license probes) — the 227-line handler is
+  now a composition of small testable checks. No behaviour change.
+
+### Tests
+
+- Paid down the handler-test debt: `auth login` (non-interactive, keyring vs
+  `--no-keyring`), `auth logout` (secret purge + activeProfile repointing),
+  `auth status` (machine-readable path, key masking), `profile add/remove`,
+  `workflow watch` (SIGINT stop path + listener cleanup), plus full coverage of
+  the new governance verbs. 487 tests.
+- **Cross-package type-compat lock**: a compile-time assertion that the CLI's
+  `Workflow`/`WorkflowNode` stay assignable to the validator's input types —
+  the `validate()` boundary can no longer silently drift into a cast.
+
 ## [1.4.0] — 2026-07-04 (one-shot deploy sequencer + docs-as-code)
 
 ### Added
