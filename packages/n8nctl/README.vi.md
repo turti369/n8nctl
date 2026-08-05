@@ -18,6 +18,7 @@
 - Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal, 6 assertion-failed)
 - Retry + exponential backoff + tôn trọng `Retry-After` header
 - Validate workflow offline qua [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
+- n8n MCP helpers: suy ra `<host>/mcp-server/http`, sinh config streamable HTTP cho MCP client, và phân vai official MCP / official CLI / n8nctl
 
 ## Cài đặt
 
@@ -50,6 +51,10 @@ n8nctl workflow trigger-webhook 58 --data '{"input": "value"}' --wait
 # 6. Xem execution gần nhất
 n8nctl execution list --workflow 58 --limit 1
 n8nctl execution get <execution-id> --logs
+
+# 7. Chuẩn bị n8n MCP cho Claude/Codex/Cursor
+n8nctl mcp info --json
+n8nctl mcp config --client codex --server-name n8n-prod --token-env N8N_MCP_TOKEN
 ```
 
 ## Tham chiếu commands
@@ -95,6 +100,13 @@ n8nctl profile {list|add|switch|remove}
 n8nctl config {get|set|list}
 n8nctl doctor                           # health check toàn diện
 ```
+
+### mcp
+| Command | Mô tả |
+|---------|-------|
+| `mcp info [--endpoint <url>] [--token-env <name>]` | Hiển thị endpoint MCP, phân vai official MCP/CLI và guardrails an toàn |
+| `mcp config --client <claude\|cursor\|codex\|generic>` | Sinh snippet streamable HTTP cho MCP client, không lộ `N8N_API_KEY` |
+| `mcp compare` | So sánh trách nhiệm giữa n8n MCP chính thức, n8n CLI/API client chính thức và n8nctl |
 
 ## Auth resolution (thứ tự ưu tiên)
 

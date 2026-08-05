@@ -19,6 +19,7 @@
 - Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal, 6 assertion-failed)
 - Method-aware retry with exponential backoff + `Retry-After` respect (writes never double-fire)
 - Offline workflow validation via [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
+- n8n MCP helpers: derive `<host>/mcp-server/http`, generate streamable-HTTP client config, and compare official MCP/CLI/n8nctl responsibilities
 
 ## Install
 
@@ -55,6 +56,10 @@ n8nctl workflow run 58 --wait
 # 6. Inspect last execution
 n8nctl execution list --workflow 58 --limit 1
 n8nctl execution get <execution-id> --logs
+
+# 7. Prepare n8n instance MCP for an agent client
+n8nctl mcp info --json
+n8nctl mcp config --client claude --server-name n8n-prod --token-env N8N_MCP_TOKEN
 ```
 
 ## Command reference
@@ -116,6 +121,13 @@ See [the umbrella README](../../README.md) for the full monorepo context.
 | `profile add <name> --host <url>` | Add profile |
 | `profile switch <name>` | Set active profile |
 | `profile remove <name>` | Remove profile |
+
+### mcp
+| Command | Description |
+|---------|-------------|
+| `mcp info [--endpoint <url>] [--token-env <name>]` | Show the derived n8n MCP endpoint, official MCP/CLI positioning, and safety guardrails |
+| `mcp config --client <claude\|cursor\|codex\|generic>` | Generate a streamable-HTTP MCP client config snippet without exposing `N8N_API_KEY` |
+| `mcp compare` | Compare official n8n MCP, official n8n CLI/API client, and n8nctl responsibilities |
 
 ## Auth resolution order
 

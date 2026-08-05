@@ -16,6 +16,7 @@ import { createProjectCommand } from './commands/project/index.js';
 import { createSourceControlCommand } from './commands/source-control/index.js';
 import { createNodeCommand } from './commands/node/index.js';
 import { createCatalogCommand } from './commands/catalog/index.js';
+import { createMcpCommand } from './commands/mcp/index.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -66,6 +67,7 @@ export function buildProgram(): Command {
   program.addCommand(createUserCommand());
   program.addCommand(createProjectCommand());
   program.addCommand(createSourceControlCommand());
+  program.addCommand(createMcpCommand());
   program.addCommand(createNodeCommand());
   program.addCommand(createCatalogCommand());
   program.addCommand(createAuditCommand());

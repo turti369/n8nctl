@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-08-05 (MCP helpers + repo reunification)
+
+Reunites the `trngthnh369/n8nctl` line, whose `mcp` work had been stranded on a
+diverged `main` since the 2026-07-03 migration, and moves the canonical
+repository back to `trngthnh369/n8nctl`.
+
+### Added
+
+- **`mcp info|config|compare`** — agent-facing helpers for n8n's instance-level
+  MCP surface:
+  - `mcp info` prints the derived MCP endpoint (`<host>/mcp-server/http`), the
+    separate MCP token env, official MCP/CLI positioning, and production
+    guardrails without exposing `N8N_API_KEY`.
+  - `mcp config --client <claude|cursor|codex|generic>` emits a
+    streamable-HTTP MCP client snippet with a bearer-token placeholder.
+  - `mcp compare` clarifies the boundary: n8n MCP exposes tools, the official
+    n8n CLI mirrors the public API, and n8nctl remains the validation,
+    packaging, promotion, rollback, and agent-safe delivery layer.
+
+### Changed
+
+- **Canonical repository moved back to `trngthnh369/n8nctl`.** `repository`,
+  `homepage`, `bugs`, and `author` URLs in both packages now point there, which
+  is also a hard requirement for npm provenance (`npm publish --provenance`
+  rejects a `repository.url` that does not match the publishing repo).
+- `package-lock.json` workspace version resynced (it had been stale at `1.0.1`
+  since the 1.2.0 release).
+
 ## [1.5.0] — 2026-07-10 (governance coverage + test hardening)
 
 Phase 4 tail — the final roadmap items.

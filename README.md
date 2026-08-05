@@ -26,12 +26,14 @@ n8nctl auth login
 n8nctl workflow list
 n8nctl workflow validate ./my-workflow.json
 n8nctl workflow backup 42 -o ./backups/
+n8nctl mcp info --json
+n8nctl mcp config --client codex --server-name n8n-prod --token-env N8N_MCP_TOKEN
 ```
 
 ## Development
 
 ```bash
-git clone https://github.com/turti369/n8nctl.git
+git clone https://github.com/trngthnh369/n8nctl.git
 cd n8nctl
 npm install                         # installs workspace deps
 npm run build                       # builds all packages
@@ -46,7 +48,8 @@ n8nctl --help
 
 ### `@trngthnh369/n8nctl`
 Full CLI inspired by `gh` and `kubectl`. Layered auth, multi-instance profiles,
-`--json` / `--jq` / `--template` output. See [package README](./packages/n8nctl/README.md).
+`--json` / `--jq` / `--template` output, and MCP helpers for n8n's official
+instance-level MCP endpoint. See [package README](./packages/n8nctl/README.md).
 
 ### `@trngthnh369/n8n-workflow-validator`
 Standalone validator used by the CLI. 6 layers: structural, referential, expression, secrets, node sanity, parameter types.
