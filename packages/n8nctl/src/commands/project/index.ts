@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
 import { rethrowWithLicenseHint } from '../../lib/license.js';
+import { createProjectManageCommands } from './manage.js';
 import type { Factory } from '../../factory.js';
 
 interface N8nProject {
@@ -31,9 +32,10 @@ export async function projectListHandler(
 }
 
 export function createProjectCommand(): Command {
-  const cmd = new Command('project').description('Inspect projects (licensed n8n feature, read-only)');
+  const cmd = new Command('project').description('Manage projects (licensed n8n feature)');
   cmd.addCommand(
     new Command('list').alias('ls').description('List projects').action(withAction(projectListHandler)),
   );
+  for (const sub of createProjectManageCommands()) cmd.addCommand(sub);
   return cmd;
 }

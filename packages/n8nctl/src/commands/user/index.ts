@@ -1,6 +1,9 @@
 import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { printData } from '../../lib/output.js';
+import { createInviteCommand } from './invite.js';
+import { createDeleteCommand } from './delete.js';
+import { createRoleCommand } from './role.js';
 import type { Factory } from '../../factory.js';
 
 interface N8nUser {
@@ -46,7 +49,7 @@ export async function userGetHandler(
 }
 
 export function createUserCommand(): Command {
-  const cmd = new Command('user').description('Inspect instance users (read-only)');
+  const cmd = new Command('user').description('Manage instance users (writes are licensed features)');
   cmd.addCommand(
     new Command('list').alias('ls').description('List users').action(withAction(userListHandler)),
   );
@@ -56,5 +59,8 @@ export function createUserCommand(): Command {
       .argument('<id>', 'user id or email')
       .action(withAction(userGetHandler)),
   );
+  cmd.addCommand(createInviteCommand());
+  cmd.addCommand(createDeleteCommand());
+  cmd.addCommand(createRoleCommand());
   return cmd;
 }

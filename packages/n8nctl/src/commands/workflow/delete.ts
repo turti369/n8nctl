@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import inquirer from 'inquirer';
 import { withAction } from '../../lib/runtime.js';
+import { confirmPrompt } from '../../lib/prompt.js';
 import { c } from '../../lib/io.js';
 import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
@@ -26,14 +26,7 @@ export async function deleteWorkflowHandler(
   }
 
   if (!opts.yes && factory.io.isTTY) {
-    const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: `Delete workflow ${id}? This cannot be undone.`,
-        default: false,
-      },
-    ]);
+    const confirm = await confirmPrompt(`Delete workflow ${id}? This cannot be undone.`);
     if (!confirm) {
       factory.io.stderr.write(`${c.yellow('cancelled')}\n`);
       return;

@@ -5,6 +5,7 @@ import { withAction } from '../../lib/runtime.js';
 import { ValidationError, ApiError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
+import { autoValidate, type AutoValidateOpts } from '../../lib/auto-validate.js';
 import { computeDiff } from './diff.js';
 import {
   planPromotion,
@@ -16,7 +17,7 @@ import type { Factory } from '../../factory.js';
 import type { N8nClient } from '../../lib/api.js';
 import type { Workflow } from '../../types/n8n.js';
 
-interface PromoteOpts {
+interface PromoteOpts extends AutoValidateOpts {
   to?: string;
   from?: string;
   map?: string;
@@ -30,17 +31,46 @@ interface NodeWithCreds {
   credentials?: Record<string, { id?: string; name?: string }>;
 }
 
+type FullWorkflow = Workflow & { nodes?: NodeWithCreds[] };
+
+/** Max parallel detail fetches when scanning a target instance (mirrors export-all). */
+const TARGET_SCAN_CONCURRENCY = 8;
+
 /**
- * Derive the universe of credentials present on an instance from its workflow
- * nodes. n8n's Public API has NO GET /credentials list endpoint, so this is
- * the only way to discover {id, name, type} of credentials in use on target.
+ * Fetch every FULL workflow on an instance in a single pass: paginate the list
+ * once, then fetch details with a bounded worker pool. Both credential
+ * derivation and same-name lookup are then served from this one in-memory set,
+ * replacing the previous TWO full `/workflows` scans + sequential per-workflow
+ * GETs (O(N) sequential → one list + N parallel).
  */
-async function deriveTargetCredentials(client: N8nClient): Promise<TargetCredential[]> {
+async function collectTargetWorkflows(client: N8nClient): Promise<FullWorkflow[]> {
+  const summaries: Workflow[] = [];
+  for await (const wf of client.paginate<Workflow>('/workflows', {})) summaries.push(wf);
+
+  const full: FullWorkflow[] = [];
+  const queue = [...summaries];
+  const worker = async (): Promise<void> => {
+    while (queue.length > 0) {
+      const wf = queue.shift();
+      if (!wf) return;
+      full.push(await client.get<FullWorkflow>(`/workflows/${encodeURIComponent(wf.id)}`));
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(TARGET_SCAN_CONCURRENCY, queue.length || 1) }, worker),
+  );
+  return full;
+}
+
+/**
+ * Derive the universe of credentials in use on the target from its workflow
+ * nodes. n8n's Public API has NO GET /credentials list endpoint, so this is the
+ * only way to discover {id, name, type} of credentials on target. Pure over an
+ * already-collected workflow set.
+ */
+function deriveTargetCredentials(workflows: FullWorkflow[]): TargetCredential[] {
   const seen = new Map<string, TargetCredential>();
-  for await (const summary of client.paginate<Workflow>('/workflows', {})) {
-    const full = await client.get<Workflow & { nodes?: NodeWithCreds[] }>(
-      `/workflows/${encodeURIComponent(summary.id)}`,
-    );
+  for (const full of workflows) {
     for (const node of full.nodes ?? []) {
       if (!node.credentials) continue;
       for (const [type, ref] of Object.entries(node.credentials)) {
@@ -51,16 +81,6 @@ async function deriveTargetCredentials(client: N8nClient): Promise<TargetCredent
     }
   }
   return [...seen.values()];
-}
-
-async function findExistingOnTarget(
-  client: N8nClient,
-  name: string,
-): Promise<Workflow | undefined> {
-  for await (const wf of client.paginate<Workflow>('/workflows', {})) {
-    if (wf.name === name) return client.get<Workflow>(`/workflows/${encodeURIComponent(wf.id)}`);
-  }
-  return undefined;
 }
 
 export async function promoteHandler(
@@ -92,7 +112,10 @@ export async function promoteHandler(
     }
     mapEntries = parseMapFile(raw);
   }
-  const targetCredentials = await deriveTargetCredentials(targetClient);
+  // Single pass over the target instance: one list + bounded-parallel detail
+  // fetch, reused for both credential derivation and the same-name lookup below.
+  const targetWorkflows = await collectTargetWorkflows(targetClient);
+  const targetCredentials = deriveTargetCredentials(targetWorkflows);
 
   // 3. Plan the credential remap (pure).
   const plan = planPromotion(source, targetCredentials, mapEntries);
@@ -118,8 +141,13 @@ export async function promoteHandler(
     );
   }
 
+  // Validate the remapped workflow before promoting. Warn-only by default
+  // (promote operates on already-live workflows); --validate-policy blocks.
+  autoValidate(factory, plan.workflow, opts);
+
   // 5. Diff against an existing same-name workflow on target (create or update).
-  const existing = await findExistingOnTarget(targetClient, source.name);
+  //    Served from the single pass above — no second scan.
+  const existing = targetWorkflows.find((w) => w.name === source.name);
   const body = stripReadOnlyFields(plan.workflow);
 
   const changes = existing ? computeDiff(existing, plan.workflow) : [];
@@ -200,5 +228,7 @@ export function createPromoteCommand(): Command {
     .option('--allow-unmapped', 'proceed even if some credentials have NO target match (keeps source refs; ambiguous still blocks)')
     .option('--out-dir <dir>', 'write promoted JSON + mapping report + target diff as artifacts')
     .option('--activate', 'activate the workflow on the target after promotion')
+    .option('--no-validate', 'Skip pre-promote workflow validation')
+    .option('--validate-policy <p>', 'Block on validation issues per policy (dev|ci|strict). Default: warn only.')
     .action(withAction<PromoteOpts>(promoteHandler));
 }

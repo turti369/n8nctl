@@ -1,6 +1,6 @@
 {
   "name": "@trngthnh369/n8nctl",
-  "version": "1.1.0",
+  "version": "1.6.0",
   "description": "CLI for managing n8n workflows via REST API — kubectl for n8n, inspired by gh.",
   "keywords": [
     "n8n",
@@ -39,6 +39,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "start": "node ./dist/index.js",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "prepack": "npm run build",
@@ -63,11 +64,11 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.9.0",
     "@types/proper-lockfile": "^4.1.4",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/coverage-v8": "^2.1.9",
     "axios-mock-adapter": "^2.1.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.6.3",
-    "vitest": "^4.1.9"
+    "vitest": "^2.1.4"
   },
   "publishConfig": {
     "access": "public"

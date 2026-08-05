@@ -5,20 +5,265 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.0] — 2026-08-05 (MCP helpers + repo reunification)
+
+Reunites the `trngthnh369/n8nctl` line, whose `mcp` work had been stranded on a
+diverged `main` since the 2026-07-03 migration, and moves the canonical
+repository back to `trngthnh369/n8nctl`.
 
 ### Added
 
-- **`mcp info|config|compare`** — agent-facing helpers for n8n's official
-  instance-level MCP surface and official beta n8n CLI/API client:
-  - `mcp info` prints the derived MCP endpoint (`<host>/mcp-server/http`),
+- **`mcp info|config|compare`** — agent-facing helpers for n8n's instance-level
+  MCP surface:
+  - `mcp info` prints the derived MCP endpoint (`<host>/mcp-server/http`), the
     separate MCP token env, official MCP/CLI positioning, and production
     guardrails without exposing `N8N_API_KEY`.
   - `mcp config --client <claude|cursor|codex|generic>` emits a
     streamable-HTTP MCP client snippet with a bearer-token placeholder.
-  - `mcp compare` clarifies the boundary: n8n MCP exposes tools, official
+  - `mcp compare` clarifies the boundary: n8n MCP exposes tools, the official
     n8n CLI mirrors the public API, and n8nctl remains the validation,
     packaging, promotion, rollback, and agent-safe delivery layer.
+
+### Changed
+
+- **Canonical repository moved back to `trngthnh369/n8nctl`.** `repository`,
+  `homepage`, `bugs`, and `author` URLs in both packages now point there, which
+  is also a hard requirement for npm provenance (`npm publish --provenance`
+  rejects a `repository.url` that does not match the publishing repo).
+- `package-lock.json` workspace version resynced (it had been stale at `1.0.1`
+  since the 1.2.0 release).
+
+## [1.5.0] — 2026-07-10 (governance coverage + test hardening)
+
+Phase 4 tail — the final roadmap items.
+
+### Added
+
+- **User governance** (licensed: user management): `user invite <emails...>
+  [--role global:admin|global:member]` (the invite endpoint takes an array and
+  reports per-entry success/failure — partial failures exit 1 with the
+  `inviteAcceptUrl` printed per invitee), `user delete <id>` (confirm-gated),
+  `user role <id> <global:admin|global:member>`.
+- **Project governance** (licensed: Projects): `project create|update|delete`
+  plus membership: `project add-user <projectId> <userId>
+  [--role project:admin|project:editor|project:viewer]` and
+  `project remove-user`. All licensed calls map 403/404 to the standard
+  license hint. Endpoint contracts added to the matrix in
+  `scripts/SESSION_REST_CONTRACT.md` (mock-tested; live-verify on a licensed
+  instance before relying on them in prod).
+
+### Changed
+
+- **CI now enforces coverage thresholds** (`npm run test:coverage`, single
+  matrix leg) — the thresholds in `vitest.config.ts` existed since 1.0 but were
+  never run in CI. Ratcheted to just under current actuals
+  (statements 75, branches 70, functions 80, lines 75 vs actual 79/75/88/79)
+  so a coverage regression fails the build while normal churn passes.
+- **`doctor` internals split into per-check functions** (node/config/keyring/
+  env/connectivity/read-permission/license probes) — the 227-line handler is
+  now a composition of small testable checks. No behaviour change.
+
+### Tests
+
+- Paid down the handler-test debt: `auth login` (non-interactive, keyring vs
+  `--no-keyring`), `auth logout` (secret purge + activeProfile repointing),
+  `auth status` (machine-readable path, key masking), `profile add/remove`,
+  `workflow watch` (SIGINT stop path + listener cleanup), plus full coverage of
+  the new governance verbs. 487 tests.
+- **Cross-package type-compat lock**: a compile-time assertion that the CLI's
+  `Workflow`/`WorkflowNode` stay assignable to the validator's input types —
+  the `validate()` boundary can no longer silently drift into a cast.
+
+## [1.4.0] — 2026-07-04 (one-shot deploy sequencer + docs-as-code)
+
+### Added
+
+- **`workflow deploy <file>`** — the one-shot sequencer:
+  normalize → validate → **create-or-update** → activate → optional
+  trigger-registration probe → optional run + **verify gate**. Safety built in:
+  - **Unique-name matching** — deploy-by-name updates only when exactly one
+    workflow matches; zero → create (unless `--update-only`); **two or more →
+    exit 3** with candidate IDs (updating the wrong workflow is a data-loss
+    path). `--id`, `--create-only`, `--update-only` for explicit control.
+  - **Fail-closed validation** at `ci` by default (a new command, no
+    backward-compat concern); `--validate-policy` / `--no-validate` override.
+  - **Trigger-registration check** (`--verify-triggers`) probes the webhook
+    URL after activation and **exits 6** if it 404s despite `active=true` — the
+    self-hosted "active in DB but not registered in-process" trap. Opt-in
+    because probing fires the webhook once.
+  - **`--run` + verify gate** reuses the Cần+Đủ+Tốt gate (`--expect`,
+    `--expect-fields`, `--max-duration-ms`); gate failure → exit 6.
+  - **Transaction-log rollback** (`--rollback-on-fail`): a failed update
+    restores the pre-deploy body + active state; a failed create is deactivated
+    (or deleted with `--rollback-delete-created`).
+  - NDJSON events `workflow-deploy-started|step|finished|rolledback`, optional
+    `--out-dir` artifact.
+
+  This re-opens and supersedes the 1.0 `PIPELINE_DECISION.md` NO-GO: its reopen
+  condition ("a genuinely Claude-free consumer") is now met by the live e2e CI
+  job, which deploys with no LLM in the loop.
+
+- **`docs/COMMANDS.md` is generated from the Commander tree**
+  (`scripts/gen-command-docs.mjs`), and CI fails if it drifts (`--check`). The
+  command reference can no longer fall behind the code (the README tables had
+  drifted ~half a release before).
+
+- Live e2e smoke (`scripts/e2e/smoke.sh`) now exercises `workflow deploy`
+  end-to-end (deploy → run → gate) — the non-LLM consumer that justifies the
+  sequencer.
+
+## [1.3.0] — 2026-07-04 (deploy-path validation, live catalog, coverage)
+
+### Added
+
+- **Deploy-path validation.** `workflow create/update/import/promote` now
+  validate the workflow before writing. **Warn-only by default** (issues print
+  to stderr, deploy still proceeds — additive, a previously-working deploy keeps
+  working); pass `--validate-policy <dev|ci|strict>` to make it a hard gate
+  (exit 3), or `--no-validate` to skip. Warn-default is deliberate: E050
+  (hardcoded-secret) is CRITICAL and blocks in every policy incl. `dev`, and its
+  generic pattern false-positives on benign live workflows — so blocking by
+  default would break working promotes/updates with no policy escape.
+- **`catalog sync | show | reset`.** `catalog sync` generates an offline
+  validator catalog from THIS instance's live node types
+  (`/types/nodes.json`, incl. community nodes) so `workflow validate` and the
+  deploy-path validation param-check against the ~400+ node types the instance
+  actually runs, not the 36-node bundled snapshot. Stored per profile with a
+  min-node-count sanity gate + atomic write; `N8N_VALIDATOR_CATALOG` overrides
+  the path; `catalog reset` reverts to the bundled catalog. Requires
+  `auth login --session` (the asset is behind editor auth). The validator itself
+  is unchanged — n8nctl passes the synced catalog via its existing
+  `options.catalog`.
+- **Missing Public-API coverage**: `execution delete`, `tag update`,
+  `tag delete`, `credential delete`, `credential transfer`, `workflow transfer`
+  (transfers are licensed: Projects — mapped to a clear hint on 403/404).
+- **Dynamic shell completion.** `completion <shell>` now walks the live
+  Commander tree, so every command/verb/alias is reflected automatically. The
+  previous static lists had drifted ~half a release behind the real surface
+  (missing `variable/user/project/source-control/audit/node/catalog` and half
+  the workflow verbs).
+
+### Performance
+
+- **inquirer fully lazy-loaded.** Phase 1.2.0 lazy-loaded inquirer in
+  `auth login`, but four confirm-gated commands (`workflow delete`,
+  `workflow rollback`, `profile remove`, `source-control pull`) still imported
+  it at module top level — keeping it on the startup path. All confirm prompts
+  now route through a shared lazy `confirmPrompt`, so inquirer no longer loads
+  for `--version` or any non-interactive command.
+
+## [1.2.0] — 2026-07-03 (performance: agent-loop latency)
+
+Startup and cross-instance-scan performance, targeted at agents that invoke the
+CLI in a tight loop. No behaviour or contract changes.
+
+### Performance
+
+- **Lazy-load heavy formatter/prompt deps.** `table`, `handlebars`, `node-jq`
+  (which shells out to a `jq` binary) and `inquirer` were imported at module top
+  level, so every invocation — even `--version` — paid their load cost. They are
+  now dynamically imported only on the code path that needs them (a `--jq`,
+  `--template`, table-render, or interactive-prompt). Measured cold start of
+  `--version` dropped ~15–22% (median ~1185 → ~1001 ms; mean ~1295 → ~1013 ms on
+  the dev box). Bench harness added at `scripts/bench-startup.mjs`.
+- **`workflow promote` scans the target instance in a single pass.** Credential
+  derivation and the same-name lookup previously did TWO full `/workflows` list
+  scans plus a sequential detail GET per workflow. Now one list pass feeds a
+  bounded worker pool (concurrency 8) and both steps read from that in-memory
+  set — one list + N parallel detail fetches. Slowest command, biggest win on
+  large target instances.
+- **`workflow watch` exits immediately on Ctrl+C.** An in-flight poll is now
+  cancelled via `AbortController` instead of hanging up to the 30 s request
+  timeout before the loop notices SIGINT.
+
+### Internal
+
+- `renderTemplate` is now `async` (it dynamically imports Handlebars). Internal
+  helper; not part of the CLI contract.
+
+## [1.1.0] — 2026-07-03 (live node catalog)
+
+### Added
+
+- **`n8nctl node list | describe | search`** — inspect the node types available
+  on THIS instance from its own editor catalog (`GET /types/nodes.json`),
+  including community / langchain packages, at the exact versions the instance
+  runs. `describe <type>` accepts a full type, a short name (`httpRequest`), or
+  a fuzzy name (`http`), and collapses the per-version catalog entries to the
+  latest schema. `list`/`search` project to a lean shape; `--community` filters
+  to non-base packages; `--refresh` bypasses the 24h cache.
+- Catalog is cached under the config dir (`cache/node-types-<host>.json`, 24h
+  TTL) because the payload is large (~14 MB). Fetched via the **session client**
+  (cookie auth) — the asset is served behind editor auth, so the Public-API key
+  401s on it; run `n8nctl auth login --session` first.
+
+## [1.0.1] — 2026-07-02 (correctness & release integrity hotfix)
+
+Bug-fix release. Reviewed via a 3-reviewer plan-review bus; the retry change is
+a deliberate **behaviour change** shipped under a patch because the old
+behaviour could duplicate a resource.
+
+### Fixed
+
+- **`execution retry` hit a non-existent endpoint.** It called
+  `POST /api/v1/executions/{id}/retry` on the Public API, which has no retry
+  endpoint — it 404'd on real instances and only passed against a mock. Retry
+  now goes through the internal `/rest/executions/{id}/retry` endpoint via the
+  session client (`n8nctl auth login --session` required), with an optional
+  `--load-workflow` flag. Contract pinned in `scripts/SESSION_REST_CONTRACT.md`.
+- **Commander parse errors now exit 3 (ValidationError), not 1 or 5.** A bad or
+  unknown option/command previously exited 1 (colliding with `ApiError`) via
+  Commander's own `process.exit`. `exitOverride` is now applied across the whole
+  command tree and mapped through the frozen exit-code contract (`--help` /
+  `--version` still exit 0). Spawn-level tested.
+- **`config.settings.{timeout,color,outputFormat}` were write-only dead config.**
+  They had a full get/set UI but nothing read them. Now wired with correct
+  precedence: `--timeout` flag > `settings.timeout` > 30000; `NO_COLOR`/
+  `FORCE_COLOR` > `settings.color` > TTY; `settings.outputFormat` sets the TTY
+  default (an explicit `--json`/`--jq`/`--template` still wins).
+- **`auth status` and `config list` now honour `--json`** (and emit JSON when
+  piped), per contract §2 "every read command".
+- **Table cell values are ANSI/control-char scrubbed** — a remote workflow name
+  can no longer smuggle terminal escape sequences into a TTY via `workflow list`.
+- **Release CI could not publish 1.0.0.** The version gate required the tag to
+  equal *both* the CLI and validator versions, but they version independently
+  (CLI 1.0.0 / validator 0.6.0). The gate now checks the CLI version for `vX.Y.Z`
+  tags and adds a separate `validator-vX.Y.Z` trigger; publishes skip a version
+  already on the registry (npm versions are immutable, so this also makes reruns
+  after a partial failure idempotent), and a `workflow_dispatch` dry-run runs
+  build + tests + `npm publish --dry-run` without publishing.
+
+### Changed
+
+- **Retry is now method-aware (behaviour change).** Idempotent methods
+  (GET/HEAD/PUT/DELETE) still retry all transient HTTP (429/502/503/504) and
+  network errors. Non-idempotent writes (POST/PATCH) retry **only** when the
+  server provably did not process the request — HTTP 429 and
+  connection-never-established network errors (ECONNREFUSED/ENETUNREACH/EAI_AGAIN)
+  — so an ambiguous 502/504/ECONNRESET/ETIMEDOUT after a committed write no
+  longer risks a duplicate resource. Webhook requests (data-plane) never retry on
+  an HTTP status at all, since the target workflow may have already run. A
+  transient network failure on a write may now surface as an error instead of
+  silently self-healing — this is intended.
+
+### Added
+
+- **`scripts/e2e/smoke.sh` + `e2e-smoke.yml` workflow** — a minimal live
+  end-to-end smoke against a real n8n container (owner bootstrap → API key →
+  create → run → **execution retry** → cleanup), run on demand / weekly. This is
+  the automated net that catches the class of bug the `execution retry` fix
+  addresses; unit mocks alone can't.
+- **Endpoint contract matrix** in `scripts/SESSION_REST_CONTRACT.md` — every
+  `/rest`-dependent command must document its endpoint/auth/body/shape before
+  implementation.
+
+### Docs
+
+- README: removed the phantom `workflow execute` command (real verbs are
+  `workflow run` / `workflow trigger-webhook`), added exit code 6 to the table,
+  replaced the `NODE_TLS_REJECT_UNAUTHORIZED=0` recommendation with the scoped
+  `--insecure` flag, fixed "6-layer" → "7-layer", and corrected the clone URL to
+  the `turti369` org.
 
 ## [1.0.0] — 2026-06-13 (Phase 4: stabilization)
 

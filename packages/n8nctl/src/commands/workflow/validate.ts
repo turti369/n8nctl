@@ -6,6 +6,8 @@ import { withAction } from '../../lib/runtime.js';
 import { ValidationError } from '../../lib/errors.js';
 import { c } from '../../lib/io.js';
 import { normalizeWorkflow } from '../../lib/normalize.js';
+import { readConfigSync } from '../../lib/config.js';
+import { resolveSyncedCatalog } from '../../lib/validator-catalog.js';
 import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
@@ -63,9 +65,15 @@ export async function validateHandler(
     );
   }
 
+  // Prefer the active profile's synced catalog (from `catalog sync`) so param
+  // checks cover this instance's real node set; else the validator's bundled one.
+  const profileName = factory.flags.profile ?? readConfigSync().activeProfile ?? 'default';
+  const catalog = resolveSyncedCatalog(profileName);
+
   const result = runValidate(wf, {
     strict: opts.strict,
     profile: opts.policy as 'dev' | 'ci' | 'strict' | undefined,
+    ...(catalog ? { catalog } : {}),
   });
 
   if (result.valid && result.issues.length === 0) {

@@ -3,6 +3,9 @@ import { createFactory, type Factory, type GlobalFlags } from '../factory.js';
 import { N8nCtlError, ExitCode } from './errors.js';
 import { c } from './io.js';
 import { validateOutputOptions } from './output.js';
+import { scrubAnsi } from './util.js';
+
+export { scrubAnsi };
 
 export type ActionHandler<TOpts = Record<string, unknown>> = (
   factory: Factory,
@@ -84,24 +87,4 @@ function handleError(err: unknown, factory: Factory): never {
 
   io.stderr.write(`${c.red('error')}: unknown failure — ${scrubAnsi(String(err))}\n`);
   process.exit(ExitCode.InternalError);
-}
-
-/**
- * Strip ANSI escape sequences and other control characters from strings
- * that will be written to stderr.
- *
- * Note: the C0/C1 range alone already neutralises escape sequences (ESC=0x1B
- * sits inside \x0B-\x1F, so a sequence can never EXECUTE) — but stripping
- * only the introducer leaves the printable sequence body behind as residue
- * ("[2J", "]0;title"). The sequence-aware pass removes the whole sequence:
- * CSI (ESC[ / 0x9B), OSC (ESC] … BEL|ST), DCS/SOS/PM/APC (ESC P/X/^/_ … ST),
- * and 2-char ESC sequences.
- */
-// eslint-disable-next-line no-control-regex
-const ANSI_SEQUENCES =
-  /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)?|[PX^_][\s\S]*?(?:\x1B\\|$)|[@-Z\\-_])|\x9B[0-?]*[ -/]*[@-~]/g;
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\x00-\x08\x0B-\x1F\x7F-\x9F]/g;
-export function scrubAnsi(input: string): string {
-  return input.replace(ANSI_SEQUENCES, '').replace(CONTROL_CHARS, '');
 }

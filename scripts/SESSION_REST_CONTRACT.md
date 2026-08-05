@@ -27,6 +27,32 @@
 - Wait: executionId IS queryable via Public API `GET /api/v1/executions/{id}` → reuse `waitForExecution(factory.client())`.
 - Exec mode: `executionMode=regular`, `isQueueModeEnabled=false` (single-main).
 
+## Endpoint contract matrix (extend before adding any /rest-dependent command)
+
+| Endpoint | Method | Auth | Body | Response (shape-guarded) | License | n8n tested | Notes |
+|---|---|---|---|---|---|---|---|
+| `/rest/login` | POST | none (mints cookie) | `{email, emailOrLdapLoginId, password}` | `set-cookie: n8n-auth`; `{data:{email,role}}` | — | 1.122.5 | 7d cookie, no CSRF |
+| `/rest/login` | GET | cookie | — | `{data:{email,role}}` | — | 1.122.5 | whoami; 401 ⇒ re-login |
+| `/rest/workflows/{id}` | GET | cookie | — | `{data:<workflow>}` or bare | — | 1.122.5 | shape-guarded via expectRestObject |
+| `/rest/workflows/{id}/run` | POST | cookie | `{workflowData, triggerToStartFrom?}` — **never `runData`** | `{data:{executionId?, waitingForWebhook?}}` | — | 1.122.5 | webhook ⇒ waitingForWebhook |
+| `/rest/executions/{id}` | GET | cookie | — | `{data:<execution>}` or bare | — | 1.122.5 | poll to terminal |
+| `/rest/executions/{id}/retry` | POST | cookie | `{loadWorkflow?: boolean}` — body OPTIONAL (omit ⇒ retry from saved exec data; `true` ⇒ reload saved workflow) | `{data:<new execution>}` or bare | — | **RE-VERIFY on n8npc before v1.0.1 ship (hard gate)** — source: n8n `execution.types.ts` `Retry` route | Public API v1 has NO retry endpoint; only /rest. Fixes the 404 bug (was wrongly `POST /api/v1/executions/{id}/retry`). |
+
+> **Rule (from plan-review):** every new `/rest` (and licensed Public-API) endpoint a command depends on gets a row here — auth mode, body, shape guard, license, n8n version tested — BEFORE implementation. The `execution retry` bug (a fabricated Public-API endpoint that only passed against a mock) is exactly what this matrix prevents.
+
+### Public-API governance endpoints (1.5.0 — per docs.n8n.io/api/api-reference; mock-tested, live-verify on a licensed instance before relying in prod)
+
+| Endpoint | Method | Auth | Body | Response | License | Notes |
+|---|---|---|---|---|---|---|
+| `/api/v1/users` | POST | API key (owner) | ARRAY `[{email, role?}]`, role ∈ `global:admin\|global:member` | array of `{user:{id,email,inviteAcceptUrl?},error?}` per entry | user mgmt | invite; partial failures per entry |
+| `/api/v1/users/{id}` | DELETE | API key (owner) | — | 204 | user mgmt | id or email |
+| `/api/v1/users/{id}/role` | PATCH | API key (owner) | `{newRoleName: 'global:admin'\|'global:member'}` | 200 | user mgmt | |
+| `/api/v1/projects` | POST | API key | `{name}` | `{id,name,type}` | **Projects (paid)** | rethrowWithLicenseHint |
+| `/api/v1/projects/{id}` | PUT | API key | `{name}` | 204/200 | Projects | rename |
+| `/api/v1/projects/{id}` | DELETE | API key | — | 204 | Projects | |
+| `/api/v1/projects/{id}/users` | POST | API key | `{relations:[{userId, role}]}`, role ∈ `project:admin\|project:editor\|project:viewer` | 201 | Projects | add members |
+| `/api/v1/projects/{id}/users/{userId}` | DELETE | API key | — | 204 | Projects | remove member |
+
 ---
 <details><summary>Original template (superseded by findings above)</summary>
 

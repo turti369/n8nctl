@@ -146,6 +146,17 @@ export class N8nSessionClient {
     return r.data ?? {};
   }
 
+  /**
+   * GET a root-level static asset OUTSIDE `/rest` (e.g. `/types/nodes.json`,
+   * the editor's node catalog) with the session cookie. The absolute URL
+   * bypasses the `/rest` baseURL; the api-key client 401s on this path because
+   * it is served behind editor-session auth, not the Public API.
+   */
+  async getRootJson<T>(path: string): Promise<T> {
+    await this.ensureSession();
+    return this.req<T>({ method: 'GET', url: `${this.host}${path}` });
+  }
+
   async getWorkflowRest(id: string): Promise<Workflow> {
     const r = await this.req<{ data?: Workflow }>({
       method: 'GET',
@@ -195,6 +206,23 @@ export class N8nSessionClient {
       url: `/executions/${encodeURIComponent(execId)}`,
     });
     return expectRestObject<ExecutionState>(r?.data ?? r, `execution ${execId}`);
+  }
+
+  /**
+   * Retry a (usually failed) execution via the internal `/rest` endpoint the UI
+   * "Retry" button hits. The Public API v1 has NO execution-retry endpoint —
+   * only /rest does. Body `{ loadWorkflow }` is OPTIONAL: omitted → retry with
+   * the execution's saved workflow data; `true` → reload the current saved
+   * workflow. Returns the new execution object.
+   * Contract pinned in scripts/SESSION_REST_CONTRACT.md.
+   */
+  async retryExecution(execId: string, loadWorkflow = false): Promise<ExecutionState> {
+    const r = await this.req<{ data?: ExecutionState }>({
+      method: 'POST',
+      url: `/executions/${encodeURIComponent(execId)}/retry`,
+      data: { loadWorkflow },
+    });
+    return expectRestObject<ExecutionState>(r?.data ?? r, `retry of execution ${execId}`);
   }
 
   /** Poll /rest/executions/{id} to a terminal state (robust vs saveManualExecutions). */

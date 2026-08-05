@@ -9,13 +9,13 @@
 
 ## Tính năng
 
-- Quản lý workflow đầy đủ (list, get, create, update, activate, backup, trigger-webhook, run, delete)
+- Quản lý workflow đầy đủ (list, get, create, update, activate, run, verify, promote, backup, rollback, delete)
 - Kiểm tra execution (list, get, retry, wait, last-error)
 - Auth phân lớp: `--api-key` → `$N8N_API_KEY` → OS keyring (keytar) → config file
 - **Multi-instance profiles** (dev/staging/prod) — switch bằng 1 lệnh
 - Output trio: `--json` / `--jq` / `--template` (giống `gh`)
 - TTY-aware: bảng đẹp khi ở terminal, JSON khi pipe
-- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal)
+- Typed exit codes (0 OK, 1 API, 2 auth, 3 validation, 4 network, 5 internal, 6 assertion-failed)
 - Retry + exponential backoff + tôn trọng `Retry-After` header
 - Validate workflow offline qua [`@trngthnh369/n8n-workflow-validator`](../n8n-workflow-validator)
 - n8n MCP helpers: suy ra `<host>/mcp-server/http`, sinh config streamable HTTP cho MCP client, và phân vai official MCP / official CLI / n8nctl
@@ -105,7 +105,7 @@ n8nctl doctor                           # health check toàn diện
 | Command | Mô tả |
 |---------|-------|
 | `mcp info [--endpoint <url>] [--token-env <name>]` | Hiển thị endpoint MCP, phân vai official MCP/CLI và guardrails an toàn |
-| `mcp config --client <claude|cursor|codex|generic>` | Sinh snippet streamable HTTP cho MCP client, không lộ `N8N_API_KEY` |
+| `mcp config --client <claude\|cursor\|codex\|generic>` | Sinh snippet streamable HTTP cho MCP client, không lộ `N8N_API_KEY` |
 | `mcp compare` | So sánh trách nhiệm giữa n8n MCP chính thức, n8n CLI/API client chính thức và n8nctl |
 
 ## Auth resolution (thứ tự ưu tiên)
@@ -147,6 +147,7 @@ n8nctl workflow list --template '{{#each this}}{{id}}  {{name}}{{newline}}{{/eac
 | 3 | Lỗi validation |
 | 4 | Lỗi network |
 | 5 | Lỗi nội bộ |
+| 6 | Assertion failed — lệnh chạy xong nhưng kỳ vọng không đạt (`workflow verify`, `--expect-status`) |
 
 ## Self-signed TLS
 
@@ -159,7 +160,7 @@ n8nctl --insecure workflow list
 # Vĩnh viễn per-profile
 n8nctl profile add dev --host https://dev.internal --insecure
 
-# Hoặc dùng env var Node native
+# Không khuyến nghị: env var Node native (tắt TLS cho TOÀN BỘ process, không chỉ n8nctl)
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 ```
 

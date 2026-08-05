@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withAction } from '../../lib/runtime.js';
 import { resolveAuth } from '../../lib/auth.js';
 import { N8nClient } from '../../lib/api.js';
+import { printData } from '../../lib/output.js';
 import { c } from '../../lib/io.js';
 import type { Factory } from '../../factory.js';
 
@@ -15,6 +16,35 @@ export async function authStatusHandler(
     host: factory.flags.host,
     profile: factory.flags.profile,
   });
+
+  const base = {
+    profile: auth.profileName,
+    host: auth.host,
+    source: auth.source,
+    apiKey: maskKey(auth.apiKey),
+  };
+
+  // Machine-readable (contract §2): --json/--jq/--template or non-TTY → JSON.
+  const wantsMachine =
+    Boolean(factory.flags.json) ||
+    Boolean(factory.flags.jq) ||
+    Boolean(factory.flags.template) ||
+    !factory.io.isTTY;
+
+  if (wantsMachine) {
+    const client = new N8nClient(auth);
+    try {
+      await client.get('/workflows', { limit: 1 });
+      await printData({ ...base, reachable: true }, { io: factory.io, opts: factory.flags });
+    } catch (err) {
+      await printData(
+        { ...base, reachable: false, error: (err as Error).message },
+        { io: factory.io, opts: factory.flags },
+      );
+      throw err; // preserve the non-zero exit code
+    }
+    return;
+  }
 
   factory.io.stdout.write(`${c.bold('Profile:')} ${auth.profileName}\n`);
   factory.io.stdout.write(`${c.bold('Host:')}    ${auth.host}\n`);

@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { createListCommand } from './list.js';
 import { createSchemaCommand } from './schema.js';
 import { createCreateCommand } from './create.js';
+import { createDeleteCommand } from './delete.js';
+import { createTransferCommand } from './transfer.js';
 
 export function createCredentialCommand(): Command {
   const cmd = new Command('credential')
@@ -10,5 +12,7 @@ export function createCredentialCommand(): Command {
   cmd.addCommand(createListCommand());
   cmd.addCommand(createSchemaCommand());
   cmd.addCommand(createCreateCommand());
+  cmd.addCommand(createDeleteCommand());
+  cmd.addCommand(createTransferCommand());
   return cmd;
 }

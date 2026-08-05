@@ -1,18 +1,32 @@
 name: Release
 
-# Tag-triggered publish. Workflow:
-#   1. Locally: bump version in both package.json files
-#   2. Commit: "chore(release): v0.X.Y"
-#   3. Tag:    git tag v0.X.Y && git push --tags
-#   4. This workflow publishes both packages + creates GitHub release
+# Tag-triggered publish. Two independent version lines:
+#   - CLI:        tag `vX.Y.Z`            → gate CLI version, publish CLI (+ validator if its
+#                                            version is newer than what's on the registry)
+#   - Validator:  tag `validator-vX.Y.Z`  → gate validator version, publish validator only
 #
-# Provenance requires the publish to run from GitHub Actions OIDC, so it
-# lives here rather than in publishConfig (local publishes can't sign).
+# The two packages version independently (packages/n8nctl depends on the
+# validator via a caret range), so a lockstep "tag == both versions" gate is
+# wrong — it made `v1.0.0` (CLI 1.0.0 / validator 0.6.0) impossible to publish.
+#
+# workflow_dispatch (dry_run) runs build + tests + `npm publish --dry-run` to
+# validate the release end-to-end WITHOUT publishing or tagging — use it before
+# pushing a real tag.
+#
+# Provenance requires the publish to run from GitHub Actions OIDC, so it lives
+# here rather than in publishConfig (local publishes can't sign).
 
 on:
   push:
     tags:
       - 'v*.*.*'
+      - 'validator-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run gate + build + tests + pack (npm publish --dry-run), skip real publish/release'
+        type: boolean
+        default: true
 
 permissions:
   contents: write  # for creating GitHub release
@@ -44,37 +58,92 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Verify tag matches package.json versions
+      - name: Determine release mode
+        id: mode
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          VALIDATOR_VERSION=$(node -p "require('./packages/n8n-workflow-validator/package.json').version")
+          set -euo pipefail
           CLI_VERSION=$(node -p "require('./packages/n8nctl/package.json').version")
-          echo "Tag: $TAG_VERSION"
-          echo "Validator: $VALIDATOR_VERSION"
-          echo "CLI: $CLI_VERSION"
-          if [ "$TAG_VERSION" != "$VALIDATOR_VERSION" ]; then
-            echo "::error::Tag $TAG_VERSION != validator $VALIDATOR_VERSION"
-            exit 1
-          fi
-          if [ "$TAG_VERSION" != "$CLI_VERSION" ]; then
-            echo "::error::Tag $TAG_VERSION != CLI $CLI_VERSION"
-            exit 1
+          VALIDATOR_VERSION=$(node -p "require('./packages/n8n-workflow-validator/package.json').version")
+          echo "cli_version=$CLI_VERSION" >> "$GITHUB_OUTPUT"
+          echo "validator_version=$VALIDATOR_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=dry" >> "$GITHUB_OUTPUT"
+            echo "Mode: dry-run (workflow_dispatch). CLI=$CLI_VERSION Validator=$VALIDATOR_VERSION"
+            exit 0
           fi
 
-      - name: Publish @trngthnh369/n8n-workflow-validator
-        run: npm publish -w @trngthnh369/n8n-workflow-validator --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.N8NCTL_TOKEN }}
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            validator-v*)
+              VER="${TAG#validator-v}"
+              echo "mode=validator" >> "$GITHUB_OUTPUT"
+              echo "tag_version=$VER" >> "$GITHUB_OUTPUT"
+              if [ "$VER" != "$VALIDATOR_VERSION" ]; then
+                echo "::error::Tag $VER != validator package version $VALIDATOR_VERSION"
+                exit 1
+              fi
+              ;;
+            v*)
+              VER="${TAG#v}"
+              echo "mode=cli" >> "$GITHUB_OUTPUT"
+              echo "tag_version=$VER" >> "$GITHUB_OUTPUT"
+              if [ "$VER" != "$CLI_VERSION" ]; then
+                echo "::error::Tag $VER != CLI package version $CLI_VERSION"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Unrecognised tag '$TAG' (expected vX.Y.Z or validator-vX.Y.Z)"
+              exit 1
+              ;;
+          esac
 
-      - name: Publish @trngthnh369/n8nctl
-        run: npm publish -w @trngthnh369/n8nctl --access public --provenance
+      - name: Pack (dry-run only)
+        if: steps.mode.outputs.mode == 'dry'
+        run: |
+          set -euo pipefail
+          echo "== npm publish --dry-run (no real publish) =="
+          npm publish -w @trngthnh369/n8n-workflow-validator --dry-run --access public
+          npm publish -w @trngthnh369/n8nctl --dry-run --access public
+
+      - name: Publish packages
+        if: steps.mode.outputs.mode != 'dry'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.N8NCTL_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Publish a package only if its exact version is not already on the
+          # registry. npm versions are IMMUTABLE — you cannot republish over an
+          # existing version — so "already present" always means "nothing to do"
+          # for that package (this also makes reruns after a partial failure
+          # idempotent: an already-published CLI is skipped while an unpublished
+          # validator still ships). A CLI release re-checks the validator so an
+          # advanced validator version rides along; an unchanged one skips.
+          publish_if_new() {
+            local pkg="$1" ver="$2"
+            if [ -n "$(npm view "$pkg@$ver" version 2>/dev/null || true)" ]; then
+              echo "::notice::$pkg@$ver already on registry — skipping (npm versions are immutable)"
+              return
+            fi
+            echo "Publishing $pkg@$ver"
+            npm publish -w "$pkg" --access public --provenance
+          }
+
+          MODE="${{ steps.mode.outputs.mode }}"
+          if [ "$MODE" = "validator" ]; then
+            publish_if_new @trngthnh369/n8n-workflow-validator "${{ steps.mode.outputs.validator_version }}"
+          elif [ "$MODE" = "cli" ]; then
+            # A CLI release also ships the validator if its version advanced.
+            publish_if_new @trngthnh369/n8n-workflow-validator "${{ steps.mode.outputs.validator_version }}"
+            publish_if_new @trngthnh369/n8nctl "${{ steps.mode.outputs.cli_version }}"
+          fi
 
       - name: Extract release notes from CHANGELOG
+        if: steps.mode.outputs.mode != 'dry'
         id: extract_notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ steps.mode.outputs.tag_version }}"
           # Grab the section for this version from CHANGELOG.md
           awk -v v="$VERSION" '
             /^## \[/ {
@@ -90,6 +159,7 @@ jobs:
           echo "notes-file=release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
+        if: steps.mode.outputs.mode != 'dry'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}

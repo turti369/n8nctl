@@ -211,6 +211,112 @@ describe('N8nClient.request — network errors', () => {
   });
 });
 
+describe('N8nClient.request — method-aware retry policy', () => {
+  let env: ReturnType<typeof createClientWithMocks>;
+  beforeEach(() => {
+    env = createClientWithMocks();
+  });
+
+  it('POST does NOT retry on 502 (non-idempotent, ambiguous — avoid double write)', async () => {
+    env.apiMock.onPost('/workflows').reply(502);
+    await expect(env.client.post('/workflows', {})).rejects.toThrow(ApiError);
+    expect(env.apiMock.history.post.length).toBe(1);
+  });
+
+  it('POST does NOT retry on 504', async () => {
+    env.apiMock.onPost('/workflows').reply(504);
+    await expect(env.client.post('/workflows', {})).rejects.toThrow(ApiError);
+    expect(env.apiMock.history.post.length).toBe(1);
+  });
+
+  it('POST DOES retry on 429 (rejected before handling → safe)', async () => {
+    let calls = 0;
+    env.apiMock.onPost('/tags').reply(() => {
+      calls++;
+      return calls < 2 ? [429, ''] : [201, { id: 'x' }];
+    });
+    await env.client.post('/tags', {});
+    expect(calls).toBe(2);
+  });
+
+  it('PATCH does NOT retry on 503', async () => {
+    env.apiMock.onPatch('/x').reply(503);
+    await expect(env.client.patch('/x', {})).rejects.toThrow(ApiError);
+    expect(env.apiMock.history.patch.length).toBe(1);
+  });
+
+  it('PUT DOES retry on 502 (idempotent full-replace)', async () => {
+    let calls = 0;
+    env.apiMock.onPut('/workflows/1').reply(() => {
+      calls++;
+      return calls < 2 ? [502, ''] : [200, { id: '1' }];
+    });
+    await env.client.put('/workflows/1', {});
+    expect(calls).toBe(2);
+  });
+
+  it('DELETE DOES retry on 503 (idempotent)', async () => {
+    let calls = 0;
+    env.apiMock.onDelete('/workflows/1').reply(() => {
+      calls++;
+      return calls < 2 ? [503, ''] : [200, {}];
+    });
+    await env.client.delete('/workflows/1');
+    expect(calls).toBe(2);
+  });
+
+  it('POST does NOT retry on ECONNRESET (ambiguous network error)', async () => {
+    env.apiMock.onPost('/x').reply(() => {
+      const err = new axios.AxiosError('reset');
+      err.code = 'ECONNRESET';
+      return Promise.reject(err);
+    });
+    await expect(env.client.post('/x', {})).rejects.toThrow(NetworkError);
+    expect(env.apiMock.history.post.length).toBe(1);
+  });
+
+  it('POST DOES retry on ECONNREFUSED (connection never established)', async () => {
+    let calls = 0;
+    env.apiMock.onPost('/x').reply(() => {
+      calls++;
+      if (calls < 2) {
+        const err = new axios.AxiosError('refused');
+        err.code = 'ECONNREFUSED';
+        return Promise.reject(err);
+      }
+      return [201, {}];
+    });
+    await env.client.post('/x', {});
+    expect(calls).toBe(2);
+  });
+
+  it('PUT DOES retry on ETIMEDOUT (idempotent)', async () => {
+    let calls = 0;
+    env.apiMock.onPut('/x').reply(() => {
+      calls++;
+      if (calls < 2) {
+        const err = new axios.AxiosError('timeout');
+        err.code = 'ETIMEDOUT';
+        return Promise.reject(err);
+      }
+      return [200, {}];
+    });
+    await env.client.put('/x', {});
+    expect(calls).toBe(2);
+  });
+
+  it('unset method defaults to GET and retries on 502 (idempotent)', async () => {
+    let calls = 0;
+    env.apiMock.onGet('/x').reply(() => {
+      calls++;
+      return calls < 2 ? [502, ''] : [200, {}];
+    });
+    // request() with no method → axios defaults GET; guard must treat it as idempotent
+    await env.client.request({ url: '/x' });
+    expect(calls).toBe(2);
+  });
+});
+
 describe('N8nClient.paginate', () => {
   let env: ReturnType<typeof createClientWithMocks>;
   beforeEach(() => {
@@ -277,14 +383,51 @@ describe('N8nClient.webhookRequest', () => {
     });
   });
 
-  it('retries on 502 like API requests', async () => {
+  it('does NOT retry a webhook POST on 502 (data-plane: workflow may already have run)', async () => {
     let calls = 0;
     env.webhookMock.onPost('https://hook/x').reply(() => {
       calls++;
-      return calls < 2 ? [502, ''] : [200, { ok: 1 }];
+      return [502, ''];
+    });
+    await expect(env.client.webhookRequest('https://hook/x', {})).rejects.toThrow(ApiError);
+    expect(calls).toBe(1);
+  });
+
+  it('does NOT retry a webhook POST on 429 (workflow can return 429 after side effects)', async () => {
+    let calls = 0;
+    env.webhookMock.onPost('https://hook/x').reply(() => {
+      calls++;
+      return [429, ''];
+    });
+    await expect(env.client.webhookRequest('https://hook/x', {})).rejects.toThrow(ApiError);
+    expect(calls).toBe(1);
+  });
+
+  it('DOES retry a webhook POST on ECONNREFUSED (connection never established)', async () => {
+    let calls = 0;
+    env.webhookMock.onPost('https://hook/x').reply(() => {
+      calls++;
+      if (calls < 2) {
+        const err = new axios.AxiosError('refused');
+        err.code = 'ECONNREFUSED';
+        return Promise.reject(err);
+      }
+      return [200, { ok: 1 }];
     });
     await env.client.webhookRequest('https://hook/x', {});
     expect(calls).toBe(2);
+  });
+
+  it('does NOT retry a webhook POST on ECONNRESET (ambiguous — may have reached n8n)', async () => {
+    let calls = 0;
+    env.webhookMock.onPost('https://hook/x').reply(() => {
+      calls++;
+      const err = new axios.AxiosError('reset');
+      err.code = 'ECONNRESET';
+      return Promise.reject(err);
+    });
+    await expect(env.client.webhookRequest('https://hook/x', {})).rejects.toThrow(NetworkError);
+    expect(calls).toBe(1);
   });
 
   it('uses GET method when specified', async () => {

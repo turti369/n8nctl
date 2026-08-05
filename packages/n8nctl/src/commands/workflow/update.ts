@@ -6,10 +6,11 @@ import { c } from '../../lib/io.js';
 import { readJsonSource } from '../../lib/stdin.js';
 import { stripReadOnlyFields } from '../../lib/workflow-body.js';
 import { normalizeWorkflow } from '../../lib/normalize.js';
+import { autoValidate, type AutoValidateOpts } from '../../lib/auto-validate.js';
 import type { Factory } from '../../factory.js';
 import type { Workflow } from '../../types/n8n.js';
 
-interface UpdateOpts {
+interface UpdateOpts extends AutoValidateOpts {
   activate?: boolean;
   /** Commander maps `--no-normalize` → { normalize: false }. Default true. */
   normalize?: boolean;
@@ -39,6 +40,9 @@ export async function updateWorkflowHandler(
       factory.io.event('workflow-normalized', { change: ch }, `${c.dim('→ normalized:')} ${ch}`);
     }
   }
+
+  // Validate before deploy. Warn-only by default; --validate-policy blocks.
+  autoValidate(factory, parsed, opts);
 
   const body = stripReadOnlyFields(parsed);
 
@@ -74,5 +78,7 @@ export function createUpdateCommand(): Command {
     .argument('<file>', 'path to workflow JSON file, or "-" to read stdin')
     .option('--activate', 'Activate the workflow after update (registers webhooks)')
     .option('--no-normalize', 'Skip auto-normalize (UUID node ids + execution-log settings)')
+    .option('--no-validate', 'Skip pre-deploy workflow validation')
+    .option('--validate-policy <p>', 'Block on validation issues per policy (dev|ci|strict). Default: warn only.')
     .action(withAction<UpdateOpts>(updateWorkflowHandler));
 }

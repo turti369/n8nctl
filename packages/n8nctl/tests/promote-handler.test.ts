@@ -138,6 +138,20 @@ describe('promoteHandler', () => {
     expect(env.stdout()).toContain('[dry-run]');
   });
 
+  it('scans the target workflow LIST only once (single-pass optimization)', async () => {
+    const env = makeFakeFactory();
+    env.apiMock.onGet('/workflows/w1').reply(200, sourceWf({ httpHeaderAuth: { id: 's-1', name: 'Prod API' } }));
+    const existing = { id: 'ex-9', name: 'Promote Me', nodes: [], connections: {} };
+    const tm = wireTarget(env, existing);
+    tm.onPut('/workflows/ex-9').reply(200, { id: 'ex-9', name: 'Promote Me', active: false });
+    await promoteHandler(env.factory, { to: 'prod' }, ['w1']);
+    // Credential derivation AND same-name lookup share ONE list pass (was two
+    // full `/workflows` scans before). The list endpoint is `/workflows` with
+    // no id; detail fetches are `/workflows/<id>`.
+    const listCalls = tm.history.get.filter((r) => r.url === '/workflows');
+    expect(listCalls.length).toBe(1);
+  });
+
   it('resolves an unmapped credential via --map file', async () => {
     const env = makeFakeFactory();
     env.apiMock.onGet('/workflows/w1').reply(200, sourceWf({ telegramApi: { id: 's-x', name: 'Bot' } }));

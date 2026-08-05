@@ -1,5 +1,4 @@
 import { Command } from 'commander';
-import inquirer from 'inquirer';
 import { withAction } from '../../lib/runtime.js';
 import { readConfig, updateConfig } from '../../lib/config.js';
 import {
@@ -153,8 +152,10 @@ async function sessionLogin(factory: Factory, opts: LoginOpts, profileName: stri
       validate: (v: string) => v.length > 0 || 'Password required',
     });
   }
+  // Lazy-load inquirer only when we actually need to prompt — keeps it off the
+  // startup path (the whole command tree is constructed on every invocation).
   const answers = prompts.length > 0
-    ? ((await inquirer.prompt(prompts as never)) as Record<string, string>)
+    ? ((await (await import('inquirer')).default.prompt(prompts as never)) as Record<string, string>)
     : ({} as Record<string, string>);
   const host = stripSlash(host0 ?? answers.host);
   const email = email0 ?? answers.email;
@@ -231,7 +232,7 @@ async function promptMissing(partial: { host?: string; apiKey?: string }): Promi
     });
   }
   const answers = questions.length > 0
-    ? ((await inquirer.prompt(questions as never)) as Record<string, string>)
+    ? ((await (await import('inquirer')).default.prompt(questions as never)) as Record<string, string>)
     : ({} as Record<string, string>);
   return {
     host: partial.host ?? answers.host,

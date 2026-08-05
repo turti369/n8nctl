@@ -3,6 +3,7 @@ import { N8nClient } from './lib/api.js';
 import { N8nSessionClient } from './lib/session-api.js';
 import { isKeyringAvailable, keyringCookieAccountFor, setPassword } from './lib/keyring.js';
 import { createIoStreams, type IoStreams, type LogFormat } from './lib/io.js';
+import { readConfigSync } from './lib/config.js';
 import type { OutputOptions } from './lib/output.js';
 
 export interface GlobalFlags extends AuthOverrides, OutputOptions {
@@ -30,7 +31,18 @@ export interface Factory {
 }
 
 export function createFactory(flags: GlobalFlags): Factory {
-  const io = createIoStreams(flags.logFormat);
+  // Wire config `settings` (flag/env > config > default), respecting contract §2/§6.
+  const settings = readConfigSync().settings ?? {};
+  const io = createIoStreams(flags.logFormat, settings.color);
+  // Timeout: explicit --timeout flag wins, then settings.timeout, then the
+  // client's own 30000 default (via `?? undefined`).
+  const resolvedTimeout = flags.timeout ?? settings.timeout;
+  // Output format: an explicit --json/--jq/--template still wins inside
+  // printData; settings.outputFormat only sets the TTY default when no such
+  // flag and no explicit override are present.
+  if (flags.outputFormat === undefined && settings.outputFormat) {
+    flags.outputFormat = settings.outputFormat;
+  }
   let authCache: ResolvedAuth | null = null;
   let clientCache: N8nClient | null = null;
   let sessionCache: ResolvedSession | null = null;
@@ -71,7 +83,7 @@ export function createFactory(flags: GlobalFlags): Factory {
           );
         }
         clientCache = new N8nClient(a, {
-          timeout: flags.timeout,
+          timeout: resolvedTimeout,
           insecure,
           onEvent: (e) => io.event(e.event, e.payload),
         });
@@ -82,7 +94,7 @@ export function createFactory(flags: GlobalFlags): Factory {
       const a = await resolveAuth({ profile });
       const insecure = flags.insecure === true || a.insecure === true;
       return new N8nClient(a, {
-        timeout: flags.timeout,
+        timeout: resolvedTimeout,
         insecure,
         onEvent: (e) => io.event(e.event, e.payload),
       });
@@ -92,7 +104,7 @@ export function createFactory(flags: GlobalFlags): Factory {
         const s = await ensureSession();
         const insecure = flags.insecure === true || s.insecure === true;
         sessionClientCache = new N8nSessionClient(s, {
-          timeout: flags.timeout,
+          timeout: resolvedTimeout,
           insecure,
           onEvent: (e) => io.event(e.event, e.payload),
           onCookie: async (cookie) => {
