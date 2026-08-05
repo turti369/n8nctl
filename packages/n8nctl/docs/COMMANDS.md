@@ -183,6 +183,30 @@ Poll until an execution reaches a terminal state (success/error/canceled/crashed
   - `--timeout <ms>` — Max wait time in ms (default: 120000)
   - `--poll <ms>` — Polling interval in ms (default: 2000)
 
+## mcp
+
+Plan and configure n8n instance-level MCP access without leaking API keys
+
+### `mcp compare`
+
+Compare official n8n MCP, official n8n CLI, and n8nctl responsibilities
+
+### `mcp config`
+
+Generate a MCP client config snippet for n8n instance-level MCP
+
+  - `--client <client>` — Target MCP client config shape
+  - `--endpoint <url>` — Override MCP endpoint (default: <host>/mcp-server/http)
+  - `--token-env <name>` — Environment variable that stores the MCP bearer token
+  - `--server-name <name>` — MCP server name in generated client config
+
+### `mcp info`
+
+Show n8n MCP endpoint, official CLI positioning, and production safety guardrails
+
+  - `--endpoint <url>` — Override MCP endpoint (default: <host>/mcp-server/http)
+  - `--token-env <name>` — Environment variable that stores the MCP bearer token
+
 ## node
 
 Inspect node types from THIS instance’s live catalog (incl. community nodes)
