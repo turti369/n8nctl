@@ -1,5 +1,12 @@
 # n8nctl monorepo
 
+> [!IMPORTANT]
+> **This repository has moved to [trngthnh369/n8nctl](https://github.com/trngthnh369/n8nctl).**
+>
+> This copy is archived and read-only as of 2026-08-05 (v1.6.0). It is kept so
+> that the v1.0.1-v1.5.0 tags and releases published from here keep resolving.
+> All development, issues, and releases now happen at the new home.
+
 > 🇻🇳 **[Đọc bằng tiếng Việt](./README.vi.md)**
 
 Workspace containing two npm packages for operating n8n instances from the command line:
